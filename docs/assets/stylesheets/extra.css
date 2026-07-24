@@ -1,0 +1,37 @@
+/* CloudScope documentation helpers. */
+
+.cs-screenshot {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.35rem;
+  margin-top: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.cs-screenshot-center {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cs-clear {
+  clear: both;
+}
+
+/* Make nested left navigation slightly easier to scan on wide screens. */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav__item .md-nav__item {
+    margin-left: 0.35rem;
+    padding-left: 0.45rem;
+    border-left: 1px solid var(--md-default-fg-color--lightest);
+  }
+}
+
+.cs-footer {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 0.64rem;
+    line-height: 1.4;
+}
