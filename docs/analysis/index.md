@@ -6,8 +6,8 @@ Analysis modules take detection parameters as input and produce summary values
 
 All current quantitative workflows operate on **line scan kymographs**: repeated
 sampling along a spatial line over time (typically Y = time, X = distance along
-the line). Correct [physical units](acqimage.md#physical-units-critical-for-analysis)
-and a proper [rectangular ROI](rois.md) are required for meaningful results.
+the line). Correct [physical units](../acqimage.md#physical-units-critical-for-analysis)
+and a proper [rectangular ROI](../rois.md) are required for meaningful results.
 
 ## Kymograph analysis
 
