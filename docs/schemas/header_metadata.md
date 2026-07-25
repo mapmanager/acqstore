@@ -1,5 +1,3 @@
-# Image Header Metadata
-
 | name             | display_name     | type   | default   | unit   | choices   | editable   | group       | description   |
 |:-----------------|:-----------------|:-------|:----------|:-------|:----------|:-----------|:------------|:--------------|
 | shape            | Shape            | str    |           |        |           | False      | Header      |               |

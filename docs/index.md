@@ -5,24 +5,37 @@ hide:
 
 # AcqStore
 
-AcqStore is a Python package for loading, annotating, and analyzing
-acquisition-backed microscopy files. It provides the scientific backend used by
-applications such as CloudScope, as well as by notebooks and scripts.
+AcqStore is a Python package for **acquisition-backed microscopy files**: discovery,
+loading, ROIs, metadata, and quantitative analysis of line-scan kymographs.
 
-Current quantitative analysis workflows are designed for **line scan kymographs** and include:
+An *acquisition-backed* file is more than pixels. AcqStore keeps acquisition
+context with the recording. That includes format-specific header and calibration,
+optional ROIs, and analysis sidecars. Scripts and notebooks share one scientific
+backend.
 
-- [blood flow velocity analysis](scientists/velocity-analysis.md) using a Radon-transform-based method
-- [vessel diameter analysis](scientists/diameter-analysis.md)
-- [peak detection / sum intensity analysis](scientists/sum-intensity-analysis.md) for functional fluorescence reporters (like GCaMP)
-- [heart rate analysis](scientists/heart-rate-analysis.md) derived from velocity results
+AcqStore uses **lazy loading** for image pixels and large analysis CSV tables.
+You can browse many files without loading every pixel array into memory. See
+[Loading an image](loading.md).
 
-## Install
+One example GUI that uses AcqStore is
+[CloudScope](https://mapmanager.github.io/cloudscope/). AcqStore itself does not
+depend on that application.
 
-```bash
-git clone https://github.com/mapmanager/acqstore.git
-cd acqstore
-uv sync
-```
+Current quantitative analysis workflows target **line scan kymographs**:
+
+- [blood flow velocity](analysis/kymograph/velocity-analysis.md) (Radon transform)
+- [vessel diameter](analysis/kymograph/diameter-analysis.md)
+- [sum intensity / peak detection](analysis/kymograph/sum-intensity-analysis.md) for functional reporters (like GCaMP)
+- [heart rate](analysis/kymograph/heart-rate-analysis.md) derived from velocity results
+
+## Start here
+
+1. [Install](install.md)
+2. [Sample data](sample-data.md)
+3. [Loading an image](loading.md)
+4. [AcqImage](acqimage.md): header metadata, pixels, ROIs, analysis, sidecars
+5. [ROIs](rois.md)
+6. [Analysis](analysis/index.md)
 
 ## Quick start
 
@@ -45,32 +58,11 @@ Open image formats:
 - TIFF `.tif`
 - OME-Zarr `.ome.zarr`
 
-## Who is this documentation for?
+See [Loading an image](loading.md) for how loaders work, including the native
+`.cs.ome.zarr` format (in development).
 
-<div class="grid cards" markdown>
+## API reference
 
--   :material-flask:{ .lg .middle } **Data Scientist**
+mkdocstrings-generated pages for `AcqImage`, analyses, pools, and batch APIs:
 
-    ---
-
-    Understand `AcqImage`, `AcqImageList`, line scan kymograph analysis, saved files, metadata, and notebook workflows.
-
-    [:octicons-arrow-right-24: Data Scientist Guide](scientists/index.md)
-
--   :material-code-braces:{ .lg .middle } **Developer**
-
-    ---
-
-    Clone the repository, run tests, build docs, and contribute to AcqStore.
-
-    [:octicons-arrow-right-24: Developer Guide](developers/index.md)
-
--   :material-api:{ .lg .middle } **API Reference**
-
-    ---
-
-    mkdocstrings-generated API pages for AcqImage, analyses, pools, and batch APIs.
-
-    [:octicons-arrow-right-24: API Reference](api/index.md)
-
-</div>
+[:octicons-arrow-right-24: API Reference](api/index.md)

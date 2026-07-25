@@ -1,5 +1,3 @@
-# Heart Rate Detection Parameters
-
 | name               | display_name          | type   |   default | choices   | unit   | editable   | visible   | methods   | description                                                 |
 |:-------------------|:----------------------|:-------|----------:|:----------|:-------|:-----------|:----------|:----------|:------------------------------------------------------------|
 | bpm_min            | Heart rate min        | float  |    240    |           | bpm    | True       | True      |           | Lower heart-rate bound of the analysis band.                |

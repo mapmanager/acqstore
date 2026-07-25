@@ -1,8 +1,16 @@
 """Download and prepare reusable AcqStore sample datasets.
 
-This module is intentionally GUI-independent. Applications such as CloudScope
-can call :func:`ensure_sample` and then pass the returned folder path to
-``AcqImageList`` using the same code path as a user-selected folder.
+This module is GUI-independent. Call :func:`list_samples` to inspect the
+catalog from ``cloudscope-data``, then :func:`ensure_sample` to download and
+return a local **folder** path suitable for ``AcqImageList``.
+
+Example::
+
+    from acqstore.acq_image import AcqImageList
+    from acqstore.sample_data import ensure_sample
+
+    folder = ensure_sample("velocity-sample-data")
+    acq = AcqImageList(str(folder)).get_files()[0]
 """
 
 from __future__ import annotations
@@ -119,10 +127,13 @@ def get_sample_data_dir() -> Path:
 def ensure_sample(name: str, *, sample_data_dir: str | Path | None = None) -> Path:
     """Ensure a sample dataset is downloaded/extracted and return its load folder.
 
+    The returned path is a **folder** suitable for ``AcqImageList``. To analyze
+    one recording, take the first file from that list (or pick by name).
+
     Args:
-        name: Catalog sample identifier.
+        name: Catalog sample identifier (for example ``velocity-sample-data``).
         sample_data_dir: Optional cache root override. Primarily useful for tests
-            or scripts; deployment should normally use ``CLOUDSCOPE_SAMPLE_DATA_DIR``.
+            or scripts; deployment may set ``CLOUDSCOPE_SAMPLE_DATA_DIR``.
 
     Returns:
         Local folder path that can be passed to ``AcqImageList`` as a folder.

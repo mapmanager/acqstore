@@ -1,5 +1,3 @@
-# Experiment Metadata
-
 | name         | display_name   | type   |   default | unit   | choices   | editable   | group      | description                                 |
 |:-------------|:---------------|:-------|----------:|:-------|:----------|:-----------|:-----------|:--------------------------------------------|
 | species      | Species        | str    |           |        |           | True       | Animal     | Animal species (e.g., mouse, rat).          |

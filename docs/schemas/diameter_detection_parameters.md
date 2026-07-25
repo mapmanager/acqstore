@@ -1,5 +1,3 @@
-# Diameter Detection Parameters
-
 | name                       | display_name             | type   | default         | choices                               | unit   | editable   | visible   | methods                               | description                                                                                                        |
 |:---------------------------|:-------------------------|:-------|:----------------|:--------------------------------------|:-------|:-----------|:----------|:--------------------------------------|:-------------------------------------------------------------------------------------------------------------------|
 | window_rows_odd            | Window Rows (Odd)        | int    | 5               |                                       |        | True       | True      | ('threshold_width', 'gradient_edges') | Odd number of time rows aggregated into each spatial profile.                                                      |

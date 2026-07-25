@@ -706,7 +706,20 @@ class ImageHeaderMetadata:
         self.set_clean()
 
     def update_values(self, patch: dict[str, object]) -> None:
-        """Apply editable calibration patch and write back to loader header."""
+        """Apply editable calibration patch and write back to loader header.
+
+        Editable keys are ``physical_unit_y``, ``physical_unit_x``,
+        ``physical_label_y``, and ``physical_label_x``. Always set units and
+        labels together when correcting calibration; incorrect X/Y spacing
+        produces incorrect quantitative analysis.
+
+        Args:
+            patch: Partial mapping of editable header fields.
+
+        Raises:
+            ValueError: If units are not finite and ``> 0``, or if the patch
+                fails schema validation.
+        """
         schema = self.get_schema()
         validate_patch_for_schema(schema, patch)
         if not patch:

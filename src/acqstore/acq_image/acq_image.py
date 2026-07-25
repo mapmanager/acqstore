@@ -144,13 +144,13 @@ __all__ = [
 ]
 
 class AcqImage:
-    """Root object for one acquisition file.
+    """Root object for one acquisition-backed microscopy file.
 
     An ``AcqImage`` represents one loaded acquisition file and its sidecar state.
     It owns the file loader, metadata sections, ROI set, image-contrast state,
-    and ``AcqAnalysisSet`` for this file. The object is used directly by
-    CloudScope and is also the preferred starting point for scripts that need to
-    load one file, crop image data by ROI, run analysis, or save results.
+    and ``AcqAnalysisSet`` for this file. It is the preferred starting point for
+    scripts and notebooks that need to load one file, set physical units, manage
+    ROIs, run analysis, or save results. Consuming GUIs may wrap the same object.
 
     The constructor loads image-header information from the source file and then
     attempts to hydrate persisted sidecar state from ``<source-file>.json`` when
@@ -159,9 +159,16 @@ class AcqImage:
 
     Array conventions:
         Two-dimensional image arrays use ``(Y, X)`` order, which corresponds to
-        ``(rows, columns)``. For line-scan kymographs, CloudScope interprets
-        ``Y`` as time/line index and ``X`` as distance along the sampled line.
-        ROI bounds use the same row/column coordinate system.
+        ``(rows, columns)``. For line-scan kymographs, AcqStore interprets ``Y``
+        as time/line index and ``X`` as distance along the sampled line. ROI
+        bounds use the same row/column coordinate system.
+
+    Physical units:
+        Quantitative analysis depends on correct Y/X pixel spacing. Read spacing
+        with :meth:`get_image_physical_units`. Edit calibration through the
+        ``acq_image_header`` metadata section
+        (``physical_unit_y`` / ``physical_unit_x`` and matching labels), then
+        :meth:`save`.
 
     Examples:
         Load a file, access the default channel, crop the first ROI, and inspect
@@ -175,6 +182,17 @@ class AcqImage:
             if channel is not None and roi_id is not None:
                 roi_image = acq.get_roi_image(channel, roi_id)
                 step_y, step_x = acq.get_image_physical_units()
+
+            header = acq.get_metadata_section("acq_image_header")
+            header.update_values(
+                {
+                    "physical_unit_y": 0.002,
+                    "physical_unit_x": 0.2,
+                    "physical_label_y": "s",
+                    "physical_label_x": "um",
+                }
+            )
+            acq.save()
 
     Args:
         path: Filesystem path for one supported acquisition file.

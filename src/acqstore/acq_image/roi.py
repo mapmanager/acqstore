@@ -1,14 +1,26 @@
-"""ROI models and ROI set management for CloudScope/acqstore.
+"""ROI models and ROI set management for AcqStore.
 
-This module defines a strict ROI schema for 2D image ROIs. All ROI
-coordinates are pixel coordinates relative to an external 2D numpy array using
+This module defines a strict ROI schema for 2D image ROIs. All ROI coordinates
+are pixel coordinates relative to an external 2D numpy array using
 ``array[row, col]`` convention.
 
 The schema supports:
-- rectangular ROIs
-- line-segment ROIs
+
+- rectangular ROIs (``rectroi``) — used by all current analysis modules
+- line-segment ROIs (``linesegmentroi``) — available; not used by current
+  kymograph analyses
 - runtime -> dict/JSON -> runtime round trips
 - clamping to known image bounds
+
+Typical scripted usage::
+
+    from acqstore.acq_image.roi import RectRoiBounds
+
+    roi = acq.rois.create_rect_roi(
+        bounds=RectRoiBounds(dim0_start=0, dim0_stop=100, dim1_start=10, dim1_stop=50),
+        name="vessel",
+    )
+    acq.rois.edit_rect_roi(roi.roi_id, bounds=RectRoiBounds(0, 80, 10, 40))
 """
 
 from __future__ import annotations
@@ -448,8 +460,11 @@ class LineROI(BaseROI):
 class RoiSet:
     """Container and manager for multiple ROI instances.
 
-    This class owns the ROIs, assigns unique integer IDs, and preserves
-    creation order via an internal dictionary.
+    Owns ROIs, assigns unique integer IDs, and preserves creation order.
+    Current AcqStore analyses use rectangular ROIs
+    (:meth:`create_rect_roi` / :meth:`edit_rect_roi`). Line-segment ROIs are
+    supported via :meth:`create_line_roi` but are not used by current kymograph
+    analysis modules.
 
     Args:
         image_bounds: Bounds used to clamp ROI coordinates.

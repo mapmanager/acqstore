@@ -76,28 +76,30 @@ exclude_docs: |
 
 nav:
   - Home: index.md
-  - Data Scientist:
-      - scientists/index.md
-      - Velocity Analysis: scientists/velocity-analysis.md
-      - Diameter Analysis: scientists/diameter-analysis.md
-      - Sum Intensity Analysis: scientists/sum-intensity-analysis.md
-      - Heart Rate Analysis: scientists/heart-rate-analysis.md
-      - AcqImage Metadata: scientists/acqimage-metadata.md
-      - Notebooks:
-          - scientists/notebooks.md
-          - Load and Plot Image: notebooks/load-and-plot-image.ipynb
-          - Velocity Analysis Notebook: notebooks/velocity-analysis.ipynb
-          - Diameter Analysis Notebook: notebooks/diameter-analysis.ipynb
-          - Sum Intensity Analysis Notebook: notebooks/sum-intensity-analysis.ipynb
-          - Kymograph Reference Images: notebooks/kymograph-reference-image.ipynb
-          - Heart Rate Analysis Notebook: notebooks/heart-rate-analysis.ipynb
-          - Heart Rate Batch Analysis Notebook: notebooks/heart-rate-batch-analysis.ipynb
-          - Generating a Randomized File Subset: notebooks/generating-randomized-file-for-analysis.ipynb
-      - Reproducibility: scientists/reproducibility.md
-  - Developer:
-      - developers/index.md
-      - MkDocs style guide: developers/mkdocs-style.md
-      - Contributing: developers/contributing.md
+  - Install: install.md
+  - Sample data: sample-data.md
+  - Loading an image: loading.md
+  - AcqImage: acqimage.md
+  - ROIs: rois.md
+  - Analysis:
+      - analysis/index.md
+      - Kymograph Analysis:
+          - Velocity: analysis/kymograph/velocity-analysis.md
+          - Diameter: analysis/kymograph/diameter-analysis.md
+          - Sum Intensity: analysis/kymograph/sum-intensity-analysis.md
+          - Heart Rate: analysis/kymograph/heart-rate-analysis.md
+  - Notebooks:
+      - notebooks.md
+      - Load and Plot Image: notebooks/load-and-plot-image.ipynb
+      - Velocity Analysis Notebook: notebooks/velocity-analysis.ipynb
+      - Diameter Analysis Notebook: notebooks/diameter-analysis.ipynb
+      - Sum Intensity Analysis Notebook: notebooks/sum-intensity-analysis.ipynb
+      - Kymograph Reference Images: notebooks/kymograph-reference-image.ipynb
+      - Heart Rate Analysis Notebook: notebooks/heart-rate-analysis.ipynb
+      - Heart Rate Batch Analysis Notebook: notebooks/heart-rate-batch-analysis.ipynb
+      - Generating a Randomized File Subset: notebooks/generating-randomized-file-for-analysis.ipynb
+  - Reproducibility: reproducibility.md
+  - Contributing: contributing.md
   - API:
       - api/index.md
       - AcqImage: api/acq-image.md
