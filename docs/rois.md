@@ -23,11 +23,10 @@ See `acqstore.acq_image.roi` and the [AcqImage API](api/acq-image.md).
 With no bounds, the ROI covers the full image:
 
 ```python
-from acqstore.acq_image import AcqImageList
-from acqstore.sample_data import ensure_sample
+from acqstore.acq_image import AcqImage
+from acqstore.sample_data import ensure_sample_file
 
-folder = ensure_sample('diameter-sample-data')
-acq = AcqImageList(str(folder)).get_files()[0]
+acq = AcqImage(str(ensure_sample_file('kymograph-diameter')))
 
 roi = acq.rois.create_rect_roi(name='full', note='full-frame ROI')
 print(roi.roi_id, roi.bounds)

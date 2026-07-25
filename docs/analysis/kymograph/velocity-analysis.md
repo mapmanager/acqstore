@@ -12,12 +12,11 @@ to estimate flow. Physical X/Y calibration must be correct (see
 ## Programmatic use
 
 ```python
-from acqstore.acq_image import AcqImageList
+from acqstore.acq_image import AcqImage
 from acqstore.acq_image.analysis import RadonVelocityAnalysis
-from acqstore.sample_data import ensure_sample
+from acqstore.sample_data import ensure_sample_file
 
-folder = ensure_sample('velocity-sample-data')
-acq = AcqImageList(str(folder)).get_files()[0]
+acq = AcqImage(str(ensure_sample_file('kymograph-flow')))
 
 channel = acq.images.channel_indices[0]
 roi_ids = acq.rois.get_roi_ids()

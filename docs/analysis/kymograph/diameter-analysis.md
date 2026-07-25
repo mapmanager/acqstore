@@ -13,12 +13,11 @@ is correct (see
 ## Programmatic use
 
 ```python
-from acqstore.acq_image import AcqImageList
+from acqstore.acq_image import AcqImage
 from acqstore.acq_image.analysis import DiameterAnalysis
-from acqstore.sample_data import ensure_sample
+from acqstore.sample_data import ensure_sample_file
 
-folder = ensure_sample('diameter-sample-data')
-acq = AcqImageList(str(folder)).get_files()[0]
+acq = AcqImage(str(ensure_sample_file('kymograph-diameter')))
 
 channel = acq.images.channel_indices[0]
 roi_ids = acq.rois.get_roi_ids()

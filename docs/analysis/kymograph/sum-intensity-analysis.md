@@ -25,17 +25,16 @@ comparable.
 ## Programmatic use
 
 ```python
-from acqstore.acq_image import AcqImageList
+from acqstore.acq_image import AcqImage
 from acqstore.acq_image.analysis.sum_intensity_analysis.sum_intensity_analysis import (
     SumIntensityAnalysis,
 )
 from acqstore.acq_image.analysis.sum_intensity_analysis.sum_intensity_presets import (
     SumIntensityPresetName,
 )
-from acqstore.sample_data import ensure_sample
+from acqstore.sample_data import ensure_sample_file
 
-folder = ensure_sample('diameter-sample-data')
-acq = AcqImageList(str(folder)).get_files()[0]
+acq = AcqImage(str(ensure_sample_file('kymograph-diameter')))
 
 channel = acq.images.channel_indices[0]
 roi = acq.rois.create_rect_roi(name='sum_intensity')

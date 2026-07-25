@@ -58,9 +58,17 @@ Each catalog entry provides:
 - `description`: short user-facing description
 - `url`: immutable release ZIP URL
 - `sha256`: expected archive SHA-256 digest
+- `primary_file` (optional): relative POSIX path, inside the extracted `id`
+  directory, of the one recording to open with `AcqImage`
 
 The catalog list order is the client display order. Each ZIP must contain a
-loadable top-level directory whose name exactly matches the entry's `id`.
+loadable top-level directory whose name exactly matches the entry's `id`, whether
+or not the entry sets `primary_file`.
+
+Entries that set `primary_file` are single-file samples. `ensure_sample()` still
+returns their extracted folder; `ensure_sample_file()` returns the primary path
+and raises `SampleDataError` for entries without `primary_file`. Unknown catalog
+keys are ignored by the parser, so older clients keep working.
 
 ## Architecture notes
 

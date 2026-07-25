@@ -96,18 +96,17 @@ for acq in acq_list.get_files():
 
 ## Load from sample data
 
-Until single-file catalog samples exist, use a folder sample and take the first
-file:
+For one-file demos, use a single-file catalog entry:
 
 ```python
-from acqstore.acq_image import AcqImageList
-from acqstore.sample_data import ensure_sample
+from acqstore.acq_image import AcqImage
+from acqstore.sample_data import ensure_sample_file
 
-folder = ensure_sample('velocity-sample-data')
-acq = AcqImageList(str(folder)).get_files()[0]
+acq = AcqImage(str(ensure_sample_file('kymograph-flow')))
 ```
 
-See [Sample data](sample-data.md).
+For many files, use a folder sample with `AcqImageList` (see
+[Sample data](sample-data.md)).
 
 ## Next
 

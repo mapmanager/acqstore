@@ -34,11 +34,10 @@ AcqStore feature for large multi-file datasets. See
 ## Load and inspect
 
 ```python
-from acqstore.acq_image import AcqImageList
-from acqstore.sample_data import ensure_sample
+from acqstore.acq_image import AcqImage
+from acqstore.sample_data import ensure_sample_file
 
-folder = ensure_sample('velocity-sample-data')
-acq = AcqImageList(str(folder)).get_files()[0]
+acq = AcqImage(str(ensure_sample_file('kymograph-flow')))
 
 print(acq.name)
 print(acq.images.header.dims, acq.images.header.shape)

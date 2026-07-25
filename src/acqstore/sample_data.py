@@ -11,6 +11,15 @@ Example::
 
     folder = ensure_sample("velocity-sample-data")
     acq = AcqImageList(str(folder)).get_files()[0]
+
+Some catalog entries are **single-file** samples, meaning the archive holds one
+representative recording. For those, :func:`ensure_sample_file` returns the one
+path to open with ``AcqImage``::
+
+    from acqstore.acq_image import AcqImage
+    from acqstore.sample_data import ensure_sample_file
+
+    acq = AcqImage(str(ensure_sample_file("kymograph-flow")))
 """
 
 from __future__ import annotations
@@ -18,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 from typing import Any
 from urllib.error import URLError
@@ -47,6 +56,9 @@ class SampleDataset:
         description: Short description suitable for UI help text.
         url: Remote zip archive URL.
         sha256: Expected archive SHA-256 digest, without the ``sha256:`` prefix.
+        primary_file: Optional relative POSIX path, inside the extracted sample
+            folder, of the one recording to open with ``AcqImage``. ``None`` for
+            folder samples, which are loaded with ``AcqImageList``.
     """
 
     name: str
@@ -54,6 +66,12 @@ class SampleDataset:
     description: str
     url: str
     sha256: str
+    primary_file: str | None = None
+
+    @property
+    def is_single_file(self) -> bool:
+        """Return whether this sample declares one primary recording to open."""
+        return self.primary_file is not None
 
     @property
     def cache_key(self) -> str:
@@ -163,6 +181,40 @@ def ensure_sample(name: str, *, sample_data_dir: str | Path | None = None) -> Pa
     return load_path
 
 
+def ensure_sample_file(name: str, *, sample_data_dir: str | Path | None = None) -> Path:
+    """Ensure a single-file sample is downloaded and return the path to open.
+
+    Use this for catalog entries that declare a ``primary_file``, so a doc or
+    script can go straight to ``AcqImage(str(path))`` without listing a folder.
+    The returned path may be a directory-backed store such as ``*.ome.zarr``.
+
+    Args:
+        name: Catalog sample identifier (for example ``kymograph-flow``).
+        sample_data_dir: Optional cache root override. Primarily useful for tests
+            or scripts; deployment may set ``CLOUDSCOPE_SAMPLE_DATA_DIR``.
+
+    Returns:
+        Local path of the one recording this sample represents.
+
+    Raises:
+        UnknownSampleError: If ``name`` is not present in the catalog.
+        SampleDataError: If the sample is a folder sample without a
+            ``primary_file``, or if the archive cannot be downloaded, validated,
+            or extracted with that path present.
+    """
+    sample = get_sample(name)
+    if sample.primary_file is None:
+        raise SampleDataError(
+            f'Sample {sample.name!r} is a folder sample with no primary file; use ensure_sample() and AcqImageList instead'
+        )
+
+    load_path = ensure_sample(name, sample_data_dir=sample_data_dir)
+    file_path = load_path.joinpath(*PurePosixPath(sample.primary_file).parts)
+    if not file_path.exists():
+        raise SampleDataError(f'Sample {sample.name!r} is missing its primary file {sample.primary_file!r} under {load_path}')
+    return file_path
+
+
 def _load_catalog() -> tuple[SampleDataset, ...]:
     """Fetch, cache, parse, and validate the sample catalog."""
     cache_path = get_sample_data_dir() / _CATALOG_CACHE_DIR / _CATALOG_CACHE_FILENAME
@@ -249,7 +301,28 @@ def _parse_catalog_item(item: dict[str, Any], *, index: int) -> SampleDataset:
         description=values['description'],
         url=values['url'],
         sha256=sha256,
+        primary_file=_parse_primary_file(item.get('primary_file'), index=index),
     )
+
+
+def _parse_primary_file(value: Any, *, index: int) -> str | None:
+    """Validate the optional ``primary_file`` field of one catalog object.
+
+    Returns ``None`` for folder samples. Paths that could escape the extracted
+    sample folder are rejected rather than ignored.
+    """
+    field = 'primary_file'
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise SampleDataError(f'Sample catalog item {index} has invalid {field!r}')
+
+    primary_file = value.strip()
+    if '\\' in primary_file or primary_file.startswith('/') or primary_file.endswith('/'):
+        raise SampleDataError(f'Sample catalog item {index} has invalid {field!r}')
+    if any(part in ('', '.', '..') for part in primary_file.split('/')):
+        raise SampleDataError(f'Sample catalog item {index} has invalid {field!r}')
+    return primary_file
 
 
 def _retrieve_archive(sample: SampleDataset, archive_dir: Path) -> Path:

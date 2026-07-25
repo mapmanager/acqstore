@@ -25,12 +25,11 @@ When the two estimates fall within `agree_tol_bpm` of each other the summary
 ## Programmatic use
 
 ```python
-from acqstore.acq_image import AcqImageList
+from acqstore.acq_image import AcqImage
 from acqstore.acq_image.analysis import HeartRateAnalysis, RadonVelocityAnalysis
-from acqstore.sample_data import ensure_sample
+from acqstore.sample_data import ensure_sample_file
 
-folder = ensure_sample('velocity-sample-data')
-acq = AcqImageList(str(folder)).get_files()[0]
+acq = AcqImage(str(ensure_sample_file('kymograph-flow')))
 
 channel = acq.images.channel_indices[0]
 roi_ids = acq.rois.get_roi_ids()
@@ -69,3 +68,6 @@ Typical summary content includes per-estimator results (`lomb`, `welch`), rollup
 
 See the [Heart Rate Analysis API](../../api/heart-rate-analysis.md) and the
 [Heart Rate Analysis notebook](../../notebooks/heart-rate-analysis.ipynb).
+The notebook uses the **folder** sample `velocity-sample-data` so it can show
+both accept and reject outcomes on two files. For a one-file scripted demo, use
+`ensure_sample_file('kymograph-flow')` as above.
