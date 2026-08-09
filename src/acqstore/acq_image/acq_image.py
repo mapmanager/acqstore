@@ -11,8 +11,10 @@ This module is intended for public scripting use. The most common entry points
 are ``AcqImage`` for one file and ``AcqImageList`` for collections of files.
 """
 
-from pathlib import Path
 import json
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Self
 
 import numpy as np
 
@@ -20,6 +22,7 @@ from acqstore.schema import ACQ_FILE_LIST_SCHEMA, SchemaDefinition, validate_val
 from acqstore.utils.logging import get_logger
 from .acq_pixels import AcqPixels
 from .file_loaders.base_file_loader import BaseFileLoader, ImageHeader
+from .file_loaders.in_memory_file_loader import InMemoryFileLoader
 from .io.tiff import save_pixels_as_tif
 from .io.store_utils import (
     is_s3_path,
@@ -143,6 +146,7 @@ __all__ = [
     'parent_grandparent_folder_names',
 ]
 
+
 class AcqImage:
     """Root object for one acquisition-backed microscopy file.
 
@@ -231,9 +235,120 @@ class AcqImage:
         else:
             self.path = str(Path(path).expanduser().resolve(strict=False))
 
-        self._accept = True
+        self._initialize(
+            images=create_file_loader(self.path),
+            load_images=load_images,
+            load_analysis_csv=load_analysis_csv,
+            load_persisted_state=True,
+            is_memory_backed=False,
+        )
 
-        self._images = create_file_loader(self.path)
+    @classmethod
+    def from_array(
+        cls,
+        data: np.ndarray,
+        *,
+        axes: Sequence[str],
+        source_id: str,
+        axis_spacing: Mapping[str, float] | None = None,
+        axis_units: Mapping[str, str] | None = None,
+        load_images: bool = True,
+    ) -> Self:
+        """Create an acquisition backed by an existing in-memory NumPy array.
+
+        This factory does not read or write a source file or sidecar. The original
+        array is retained without copying. Explicit exports such as
+        :meth:`save_as_tif` and :meth:`save_as_ome_zarr` remain available, while
+        implicit :meth:`save` is rejected because no persistence destination exists.
+
+        Args:
+            data: Nonempty array with a real integer or floating dtype.
+            axes: Explicit dimensions, exactly YX, CYX, ZYX, or CZYX.
+            source_id: Nonempty logical identity for this in-memory acquisition.
+            axis_spacing: Optional finite positive spacing keyed by declared axis.
+            axis_units: Optional nonempty physical unit labels keyed by declared axis.
+            load_images: Whether to create the normalized :class:`AcqPixels`
+                wrapper immediately. The source array remains in memory either way.
+
+        Returns:
+            A fully initialized in-memory acquisition model.
+
+        Raises:
+            TypeError: If data is not a NumPy array.
+            ValueError: If dtype, axes, shape, source identity, or metadata is invalid.
+        """
+        images = InMemoryFileLoader(
+            data,
+            axes,
+            source_id=source_id,
+            axis_spacing=axis_spacing,
+            axis_units=axis_units,
+        )
+        instance = cls.__new__(cls)
+        instance.path = images.path
+        instance._initialize(
+            images=images,
+            load_images=load_images,
+            load_analysis_csv=False,
+            load_persisted_state=False,
+            is_memory_backed=True,
+        )
+        return instance
+
+    @classmethod
+    def from_synthetic(
+        cls,
+        shape: Sequence[int],
+        *,
+        axes: Sequence[str],
+        source_id: str,
+        dtype: np.dtype | str | type = np.uint16,
+        axis_spacing: Mapping[str, float] | None = None,
+        axis_units: Mapping[str, str] | None = None,
+    ) -> Self:
+        """Create a deterministic coordinate-coded in-memory acquisition.
+
+        The generic pattern proves axis selection, spatial addressing, dtype, and
+        metadata behavior. It is not a scientific simulation.
+
+        Args:
+            shape: Positive sizes corresponding exactly to axes.
+            axes: Explicit dimensions, exactly YX, CYX, ZYX, or CZYX.
+            source_id: Nonempty logical identity for this synthetic acquisition.
+            dtype: Real NumPy integer or floating output dtype. Defaults to uint16.
+            axis_spacing: Optional finite positive spacing keyed by declared axis.
+            axis_units: Optional nonempty physical unit labels keyed by declared axis.
+
+        Returns:
+            A loaded in-memory AcqImage with deterministic pixels.
+
+        Raises:
+            ValueError: If axes, shape, dtype, source identity, or metadata is invalid.
+        """
+        from .synthetic import synthetic_pixels
+
+        data = synthetic_pixels(axes, shape, dtype=dtype)
+        return cls.from_array(
+            data,
+            axes=axes,
+            source_id=source_id,
+            axis_spacing=axis_spacing,
+            axis_units=axis_units,
+        )
+
+    def _initialize(
+        self,
+        *,
+        images: BaseFileLoader,
+        load_images: bool,
+        load_analysis_csv: bool,
+        load_persisted_state: bool,
+        is_memory_backed: bool,
+    ) -> None:
+        """Initialize state shared by file-backed and in-memory construction."""
+        self._accept = True
+        self._is_memory_backed = is_memory_backed
+        self._images = images
         # ``_images`` is the source-file loader and owns header/reference access.
         # ``_pixels`` is the normalized AcqPixels wrapper and exists only while
         # primary image pixels are intentionally loaded. Clearing it on unload is
@@ -251,10 +366,11 @@ class AcqImage:
         self._image_contrasts: dict[int, ImageContrast] = {}
         self._image_contrast_dirty = False
 
-        if self.path.lower().endswith(('.cs.ome.zarr', '.cs.ome.zarr.zip')):
-            self.load_native_zarr_sidecar_json()
-        else:
-            self.load_sidecar_json()
+        if load_persisted_state:
+            if self.path.lower().endswith(('.cs.ome.zarr', '.cs.ome.zarr.zip')):
+                self.load_native_zarr_sidecar_json()
+            else:
+                self.load_sidecar_json()
 
         if load_images:
             self.load_images()
@@ -263,6 +379,11 @@ class AcqImage:
     def file_id(self) -> str:
         """Return a stable identifier for this file."""
         return self.path
+
+    @property
+    def is_memory_backed(self) -> bool:
+        """Return whether this acquisition was constructed from an in-memory array."""
+        return self._is_memory_backed
 
     @property
     def name(self) -> str:
@@ -295,7 +416,9 @@ class AcqImage:
             Source image pixels are not modified. Analysis CSV files are written
             by analysis type, while per-file state is stored in the sidecar JSON.
         """
-        
+
+        self._require_file_backed('save sidecar and analysis state')
+
         # save one json file for each acq image
         self.save_sidecar_json()
 
@@ -511,6 +634,14 @@ class AcqImage:
         for section in self.get_metadata_sections():
             section.set_clean()
 
+    def _require_file_backed(self, operation: str) -> None:
+        """Reject implicit filesystem operations for an in-memory acquisition."""
+        if self._is_memory_backed:
+            raise RuntimeError(
+                f'Cannot {operation} for in-memory acquisition {self.file_id!r}; '
+                'use an explicit export method with a destination path instead.'
+            )
+
     def get_sidecar_json_path(self) -> str:
         """Return sidecar JSON path for this acquisition file.
 
@@ -518,6 +649,7 @@ class AcqImage:
             Sidecar path using full acquisition filename with extension plus
             ``.json`` suffix (for example, ``image.tif.json``).
         """
+        self._require_file_backed('resolve a sidecar path')
         return str(Path(f'{self.path}.json'))
 
     def _build_sidecar_payload(self) -> dict[str, object]:
@@ -792,6 +924,7 @@ class AcqImage:
 
     def load_analysis_csv(self) -> None:
         """Load all analysis CSV result tables for analyses known from JSON."""
+        self._require_file_backed('load analysis CSV state')
         if self.path.lower().endswith(('.cs.ome.zarr', '.cs.ome.zarr.zip')):
             self._acq_analysis_set.load_results_tables_from_directory(
                 join_store_path(self.path, 'acqstore', 'analysis')
@@ -991,7 +1124,7 @@ class AcqImage:
         channel, and ROI identifier.
         """
         return self._acq_analysis_set
-    
+
     def get_schema(self) -> SchemaDefinition:
         """Return the semantic schema for this acquisition file row."""
         return ACQ_FILE_LIST_SCHEMA
