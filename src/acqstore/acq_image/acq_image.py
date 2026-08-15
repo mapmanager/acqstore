@@ -11,10 +11,12 @@ This module is intended for public scripting use. The most common entry points
 are ``AcqImage`` for one file and ``AcqImageList`` for collections of files.
 """
 
+from __future__ import annotations
+
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 import numpy as np
 
@@ -61,6 +63,11 @@ from .tree_rows import (
 )
 
 logger = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from acqstore.nwb_io import NwbMetadata
+    from .persistence import AcqPersistenceBackend
+
 
 _ACQIMAGE_SIDECAR_VERSION = 2
 _ACQIMAGE_SIDECAR_REQUIRED_KEYS = {
@@ -344,10 +351,40 @@ class AcqImage:
         load_analysis_csv: bool,
         load_persisted_state: bool,
         is_memory_backed: bool,
+        persistence_backend: AcqPersistenceBackend | None = None,
+        file_id: str | None = None,
+        display_name: str | None = None,
     ) -> None:
-        """Initialize state shared by file-backed and in-memory construction."""
+        """Initialize state shared by file-backed, NWB-backed, and memory construction.
+
+        Args:
+            images: Pixel/header loader for the acquisition.
+            load_images: Whether primary pixels should be materialized now.
+            load_analysis_csv: Whether lazy tabular analysis results should be
+                materialized while persisted JSON is hydrated.
+            load_persisted_state: Whether persisted JSON state should be loaded.
+            is_memory_backed: Whether no source persistence destination exists.
+            persistence_backend: Optional explicit non-pixel persistence backend.
+                When omitted, AcqStore selects the existing sidecar/native-Zarr
+                backend from ``self.path``.
+            file_id: Optional logical identity distinct from the physical source
+                path, used by container formats such as NWB.
+            display_name: Optional human-readable name distinct from the physical
+                container filename.
+
+        Returns:
+            None.
+        """
+        from .persistence import create_persistence_backend
+
         self._accept = True
         self._is_memory_backed = is_memory_backed
+        self._file_id = file_id or self.path
+        self._display_name = display_name
+        self._persistence_backend = persistence_backend or create_persistence_backend(
+            self.path,
+            is_memory_backed=is_memory_backed,
+        )
         self._images = images
         # ``_images`` is the source-file loader and owns header/reference access.
         # ``_pixels`` is the normalized AcqPixels wrapper and exists only while
@@ -366,19 +403,21 @@ class AcqImage:
         self._image_contrasts: dict[int, ImageContrast] = {}
         self._image_contrast_dirty = False
 
-        if load_persisted_state:
-            if self.path.lower().endswith(('.cs.ome.zarr', '.cs.ome.zarr.zip')):
-                self.load_native_zarr_sidecar_json()
-            else:
-                self.load_sidecar_json()
+        if load_persisted_state and self._persistence_backend is not None:
+            self._persistence_backend.load_sidecar(self)
 
         if load_images:
             self.load_images()
 
     @property
     def file_id(self) -> str:
-        """Return a stable identifier for this file."""
-        return self.path
+        """Return the stable logical identifier for this acquisition.
+
+        Returns:
+            The source path for ordinary files, or a container-qualified logical
+            ID for formats such as NWB that hold multiple AcqImages.
+        """
+        return self._file_id
 
     @property
     def is_memory_backed(self) -> bool:
@@ -387,8 +426,13 @@ class AcqImage:
 
     @property
     def name(self) -> str:
-        """Return a human-readable display name for this file."""
-        return Path(self.path).name
+        """Return a human-readable display name for this acquisition.
+
+        Returns:
+            The logical member name when supplied by a container loader,
+            otherwise the source filename.
+        """
+        return self._display_name or Path(self.path).name
 
     @property
     def is_dirty(self) -> bool:
@@ -418,6 +462,15 @@ class AcqImage:
         """
 
         self._require_file_backed('save sidecar and analysis state')
+        if (
+            self._persistence_backend is not None
+            and not self._persistence_backend.supports_source_save
+        ):
+            raise RuntimeError(
+                'NWB-backed AcqImages are read/import objects. In-place NWB mutation '
+                'is not supported; use save_nwb() or save_nwb_collection() for an '
+                'explicit export.'
+            )
 
         # save one json file for each acq image
         self.save_sidecar_json()
@@ -427,6 +480,54 @@ class AcqImage:
 
         # set dirty flags to false
         self._mark_clean_after_save()
+
+    @classmethod
+    def from_nwb(
+        cls,
+        path: str | Path,
+        *,
+        load_images: bool = False,
+        load_analysis_csv: bool = False,
+    ) -> Self:
+        """Load one AcqStore NWB file through the canonical NWB module API.
+
+        Args:
+            path: Local AcqStore NWB path.
+            load_images: Whether to materialize primary pixels before returning.
+            load_analysis_csv: Whether to materialize analysis tables before
+                returning.
+
+        Returns:
+            NWB-backed AcqImage, lazy by default.
+        """
+        from acqstore.nwb_io import load_nwb
+
+        return load_nwb(
+            path,
+            load_images=load_images,
+            load_analysis_csv=load_analysis_csv,
+        )
+
+    def save_as_nwb(
+        self,
+        path: str | Path,
+        *,
+        metadata: NwbMetadata | None = None,
+        overwrite: bool = False,
+    ) -> None:
+        """Explicitly export this AcqImage to a new local NWB file.
+
+        Args:
+            path: Destination local ``.nwb`` path.
+            metadata: Optional structured NWB metadata.
+            overwrite: Whether an existing destination may be replaced.
+
+        Returns:
+            None.
+        """
+        from acqstore.nwb_io import save_nwb
+
+        save_nwb(self, path, metadata=metadata, overwrite=overwrite)
 
     def export_web(
         self,
@@ -950,14 +1051,23 @@ class AcqImage:
         self._pixels = None
 
     def load_analysis_csv(self) -> None:
-        """Load all analysis CSV result tables for analyses known from JSON."""
+        """Load lazy tabular analysis results from the configured persistence backend.
+
+        The public method name is retained for compatibility even though NWB
+        stores the same logical tables as ``DynamicTable`` objects rather than
+        CSV files.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: If the acquisition has no file-backed persistence
+                source.
+        """
         self._require_file_backed('load analysis CSV state')
-        if self.path.lower().endswith(('.cs.ome.zarr', '.cs.ome.zarr.zip')):
-            self._acq_analysis_set.load_results_tables_from_directory(
-                join_store_path(self.path, 'acqstore', 'analysis')
-            )
-        else:
-            self._acq_analysis_set.load_all_results_dfs_from_csv(self.path)
+        if self._persistence_backend is None:
+            raise RuntimeError(f'No persistence backend is configured for {self.file_id!r}')
+        self._persistence_backend.load_analysis_tables(self._acq_analysis_set)
 
     def unload_analysis_csv(self) -> None:
         """Unload all analysis CSV-backed result tables from child analyses."""

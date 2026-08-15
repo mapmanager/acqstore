@@ -583,11 +583,13 @@ class AcqAnalysisSet:
         """Return whether required analysis CSV tables are loaded.
 
         Returns:
-            True when there are no analyses, when lazy CSV loading has not been
-            attempted yet (``_results_csv_loaded`` is false), or when every
-            analysis whose sidecar CSV file exists on disk has a loaded result
-            table. Analyses without a CSV sidecar (for example ``heart_rate``)
-            do not block the loaded state.
+            True when there are no analyses, or after lazy result-table loading
+            has been attempted and every analysis whose traditional CSV sidecar
+            exists on disk has a loaded result table. Analyses without a CSV
+            sidecar (for example ``heart_rate``) do not block the loaded state.
+            Container backends such as NWB use ``_results_csv_loaded`` as the
+            authoritative completed-load flag because their tables are not
+            represented by filesystem CSV paths.
         """
         if not self._analyses:
             return True

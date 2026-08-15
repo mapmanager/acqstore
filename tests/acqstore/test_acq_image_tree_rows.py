@@ -111,6 +111,8 @@ def _make_acq_image(path: Path, *, with_analysis: bool = True) -> AcqImage:
     """
     acq_image = AcqImage.__new__(AcqImage)
     acq_image.path = str(path.resolve())
+    acq_image._file_id = acq_image.path
+    acq_image._display_name = None
     acq_image._accept = True
     acq_image._pixels = None
     acq_image._images = _FakeImages(num_channels=2, path=str(path.resolve()))

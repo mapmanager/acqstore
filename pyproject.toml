@@ -96,3 +96,8 @@ indent-style = "space"
 Homepage = "https://github.com/mapmanager/acqstore"
 Repository = "https://github.com/mapmanager/acqstore"
 Issues = "https://github.com/mapmanager/acqstore/issues"
+
+[project.optional-dependencies]
+nwb = [
+    "pynwb>=4.1.0",
+]

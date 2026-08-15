@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from acqstore.acq_image.acq_image import AcqImage
+    from acqstore.nwb_io import NwbMetadata
 
 
 def _build_file_list(path: str | Path, file_types: Sequence[str], *, folder_depth: int = 4) -> list[str]:
@@ -877,6 +878,55 @@ class AcqImageList:
         """
         for _event in self.iter_save_all(should_cancel=should_cancel):
             continue
+
+    @classmethod
+    def from_nwb(
+        cls,
+        path: str | Path,
+        *,
+        load_images: bool = False,
+        load_analysis_csv: bool = False,
+    ) -> AcqImageList:
+        """Load one AcqStore collection NWB through the canonical module API.
+
+        Args:
+            path: Local collection ``.nwb`` path.
+            load_images: Whether to materialize every member's pixels before
+                returning.
+            load_analysis_csv: Whether to materialize every member's tabular
+                analysis results before returning.
+
+        Returns:
+            NWB-backed AcqImageList, lazy by default.
+        """
+        from acqstore.nwb_io import load_nwb_collection
+
+        return load_nwb_collection(
+            path,
+            load_images=load_images,
+            load_analysis_csv=load_analysis_csv,
+        )
+
+    def save_as_nwb(
+        self,
+        path: str | Path,
+        *,
+        metadata: NwbMetadata | None = None,
+        overwrite: bool = False,
+    ) -> None:
+        """Explicitly export this collection to a new local NWB file.
+
+        Args:
+            path: Destination local ``.nwb`` path.
+            metadata: Optional structured top-level NWB metadata.
+            overwrite: Whether an existing destination may be replaced.
+
+        Returns:
+            None.
+        """
+        from acqstore.nwb_io import save_nwb_collection
+
+        save_nwb_collection(self, path, metadata=metadata, overwrite=overwrite)
 
     def load_lazy_data(
         self,

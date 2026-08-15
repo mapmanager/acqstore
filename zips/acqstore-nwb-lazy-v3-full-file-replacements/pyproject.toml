@@ -1,0 +1,103 @@
+[project]
+name = "acqstore"
+version = "0.2.0"
+description = "Acquisition-backed file loading, metadata, ROIs, and scientific analysis for microscopy data."
+readme = "README.md"
+license = "GPL-3.0-only"
+authors = [
+    { name = "Robert Cudmore", email = "robert.cudmore@gmail.com" },
+]
+keywords = [
+    "acquisition",
+    "image-analysis",
+    "microscopy",
+    "kymograph",
+    "scientific-computing",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.4.4",
+    "pandas>=3.0.2",
+    "plotly>=6.7.0",
+    "scipy>=1.17.1",
+    "tifffile>=2026.4.11",
+    "czifile>=2026.4.11",
+    "nd2>=0.11.3",
+    "oirfile>=2026.7.10,<2026.8",
+    "platformdirs>=4.9.6",
+    "scikit-image>=0.24.0",
+    "pooch>=1.9.0",
+    "tabulate>=0.10.0",
+    "pyabf>=2.3.8",
+    "zarr>=3.2.1",
+    "s3fs>=2026.6.0",
+    "bioio-ome-zarr>=3.5.1",
+]
+
+[project.optional-dependencies]
+nwb = [
+    "pynwb>=4.1.0,<5",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.2,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "mkdocs-section-index",
+    "mkdocs-jupyter",
+    "pymdown-extensions",
+    "matplotlib",
+]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.11",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["acqstore"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+]
+ignore = ["I001"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+
+[project.urls]
+Homepage = "https://github.com/mapmanager/acqstore"
+Repository = "https://github.com/mapmanager/acqstore"
+Issues = "https://github.com/mapmanager/acqstore/issues"
