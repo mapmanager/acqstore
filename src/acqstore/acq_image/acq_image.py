@@ -428,6 +428,21 @@ class AcqImage:
         # set dirty flags to false
         self._mark_clean_after_save()
 
+    def export_web(
+        self,
+        destination: str | Path,
+        *,
+        overwrite: bool = False,
+    ) -> Path:
+        """Export this acquisition as an AcqStore Web AcqImage v1 package.
+
+        The implementation lives in :mod:`acqstore.acq_image.web_export` so the
+        core acquisition class remains independent of frontend/export details.
+        """
+        from .web_export import export_acq_image
+
+        return export_acq_image(self, destination, overwrite=overwrite)
+
     def save_native_zarr(
         self,
         path: str | Path,
@@ -552,43 +567,22 @@ class AcqImage:
             overwrite=overwrite,
         )
 
-    def save_reference_as_tif(
-        self,
-        path: str | Path,
-        *,
-        imagej_metadata: bool = True,
-        overwrite: bool = False,
-    ) -> None:
-        """Export the complete reference-image array to a TIFF file.
-
-        The exported pixels do not include scan-path or line-ROI overlays.
-        Reference-image X/Y calibration is written through the same ImageJ
-        metadata path used by :meth:`save_as_tif`.
-
-        Args:
-            path: Explicit TIFF destination filename.
-            imagej_metadata: Whether to include ImageJ/Fiji calibration metadata.
-            overwrite: Whether to replace an existing TIFF file.
-
-        Raises:
-            ValueError: If this acquisition has no reference image, or if its
-                array rank does not match its dimension labels.
-            FileExistsError: If ``path`` exists and ``overwrite`` is false.
-        """
+    def _reference_acq_pixels(self) -> AcqPixels:
+        """Return the reference/overview image normalized as :class:`AcqPixels`."""
         reference = self._images.reference_image
         if reference is None:
             raise ValueError(f'Acquisition has no reference image: {self.path}')
 
         data = np.asarray(reference.array)
-        dims = tuple(reference.dims)
+        dims = tuple(str(dim).upper() for dim in reference.dims)
         if data.ndim != len(dims):
             raise ValueError(
                 'Reference image array rank does not match dimensions: '
                 f'shape={data.shape}, dims={dims!r}'
             )
 
-        scales = dict(reference.coord_scales)
-        labels = dict(reference.coord_units)
+        scales = {str(key).upper(): value for key, value in dict(reference.coord_scales).items()}
+        labels = {str(key).upper(): value for key, value in dict(reference.coord_units).items()}
         physical_units: list[float] = []
         physical_labels: list[str] = []
         for dim in dims:
@@ -614,13 +608,46 @@ class AcqImage:
             physical_units=tuple(physical_units),
             physical_units_labels=tuple(physical_labels),
         )
-        reference_pixels = AcqPixels(
+        return AcqPixels(
             data=data,
             header=header,
             source_path=self.path,
         )
+
+    def save_reference_as_ome_zarr(
+        self,
+        path: str | Path,
+        *,
+        overwrite: bool = False,
+        zarr_format: int = 3,
+    ) -> None:
+        """Export the complete reference image as pure OME-Zarr.
+
+        Raises:
+            ValueError: If this acquisition has no valid reference image.
+        """
+        self._reference_acq_pixels().to_ome_zarr(
+            path,
+            overwrite=overwrite,
+            zarr_format=zarr_format,
+            include_acqstore_pixels=False,
+        )
+
+    def save_reference_as_tif(
+        self,
+        path: str | Path,
+        *,
+        imagej_metadata: bool = True,
+        overwrite: bool = False,
+    ) -> None:
+        """Export the complete reference-image array to a TIFF file.
+
+        The exported pixels do not include scan-path or line-ROI overlays.
+        Reference-image calibration uses the same normalized ``AcqPixels``
+        representation as :meth:`save_reference_as_ome_zarr`.
+        """
         save_pixels_as_tif(
-            reference_pixels,
+            self._reference_acq_pixels(),
             path,
             imagej_metadata=imagej_metadata,
             overwrite=overwrite,

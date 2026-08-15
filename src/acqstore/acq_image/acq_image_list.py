@@ -739,6 +739,27 @@ class AcqImageList:
         """Iterate files in stable display order."""
         return iter(self._files)
 
+    def export_web_dataset(
+        self,
+        destination: str | Path,
+        *,
+        name: str | None = None,
+        overwrite: bool = False,
+    ) -> Path:
+        """Export this loaded collection as an AcqStore Web Dataset v1.
+
+        Serialization is delegated to :mod:`acqstore.acq_image.web_export`; this
+        class only exposes the operation as a public collection convenience.
+        """
+        from .web_export import export_acq_image_list
+
+        return export_acq_image_list(
+            self,
+            destination,
+            name=name,
+            overwrite=overwrite,
+        )
+
     def get_files(self) -> Sequence[AcqImage]:
         """Return files in stable display order."""
         return tuple(self._files)

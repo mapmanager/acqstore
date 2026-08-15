@@ -33,6 +33,11 @@ def test_native_cs_ome_zarr_header_round_trips_strictly(
     assert loaded.header.physical_units == (0.0005, 0.01)
     assert loaded.header.physical_units_labels == ('seconds', 'micrometer')
 
+    import zarr
+
+    multiscale = dict(zarr.open_group(str(path), mode='r').attrs)['ome']['multiscales'][0]
+    assert multiscale['axes'][0] == {'name': 'y', 'type': 'space', 'unit': 'seconds'}
+    assert multiscale['datasets'][0]['coordinateTransformations'][0]['scale'][0] == 0.0005
 
 def test_native_cs_ome_zarr_missing_header_key_fails_fast(
     tmp_path: Path,

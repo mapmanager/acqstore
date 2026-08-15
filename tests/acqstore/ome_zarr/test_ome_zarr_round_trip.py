@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Callable
 
@@ -9,18 +10,77 @@ import numpy as np
 import pytest
 
 from acqstore.acq_image.acq_pixels import AcqPixels
+from acqstore.acq_image.acq_image import AcqImage
 from acqstore.acq_image.io.ome_zarr import (
     _dataset_path_from_attrs,
+    build_ome_ngff_metadata,
     read_acq_pixels_ome_zarr,
     write_acq_pixels_ome_zarr,
 )
+
+
+def test_established_ome_zarr_public_signatures_are_unchanged() -> None:
+    """Web export policy must not appear on established public APIs."""
+    def shape(callable_object: object) -> list[tuple[str, inspect._ParameterKind, object]]:
+        return [
+            (parameter.name, parameter.kind, parameter.default)
+            for parameter in inspect.signature(callable_object).parameters.values()
+        ]
+
+    positional = inspect.Parameter.POSITIONAL_OR_KEYWORD
+    keyword = inspect.Parameter.KEYWORD_ONLY
+    required = inspect.Parameter.empty
+    assert shape(AcqPixels.to_ome_zarr) == [
+        ('self', positional, required),
+        ('path', positional, required),
+        ('overwrite', keyword, False),
+        ('zarr_format', keyword, 3),
+        ('include_acqstore_pixels', keyword, True),
+    ]
+    expected_acq_image = [
+        ('self', positional, required),
+        ('path', positional, required),
+        ('overwrite', keyword, False),
+        ('zarr_format', keyword, 3),
+    ]
+    assert shape(AcqImage.save_as_ome_zarr) == expected_acq_image
+    assert shape(AcqImage.save_reference_as_ome_zarr) == expected_acq_image
+    assert shape(write_acq_pixels_ome_zarr) == [
+        ('pixels', positional, required),
+        ('path', positional, required),
+        ('overwrite', keyword, False),
+        ('zarr_format', keyword, 3),
+        ('include_acqstore_pixels', keyword, True),
+    ]
+    assert shape(build_ome_ngff_metadata) == [
+        ('pixels', positional, required),
+        ('zarr_format', keyword, 3),
+    ]
+
+
+def test_acq_image_temporal_y_export_preserves_existing_behavior(tmp_path: Path) -> None:
+    """AcqImage temporal-Y pure export continues to retain its calibration."""
+    acq = AcqImage.from_array(
+        np.arange(6 * 4, dtype=np.uint16).reshape(6, 4),
+        axes=('Y', 'X'),
+        source_id='kymograph.tif',
+        axis_spacing={'Y': 0.0005, 'X': 0.01},
+        axis_units={'Y': 'seconds', 'X': 'micrometer'},
+    )
+    path = tmp_path / 'acq-image.ome.zarr'
+
+    acq.save_as_ome_zarr(path)
+    loaded = read_acq_pixels_ome_zarr(path, lazy=False)
+
+    assert loaded.header.physical_units == (0.0005, 0.01)
+    assert loaded.header.physical_units_labels == ('seconds', 'micrometer')
 
 
 def test_pure_ome_zarr_round_trips_mixed_axis_physical_units(
     tmp_path: Path,
     make_pixels: Callable[..., AcqPixels],
 ) -> None:
-    """Pure OME-Zarr must preserve Y=time and X=distance calibration."""
+    """Existing pure OME-Zarr behavior preserves Y=time calibration."""
     path = tmp_path / 'sample.ome.zarr'
     pixels = make_pixels(path)
 
@@ -38,6 +98,52 @@ def test_pure_ome_zarr_round_trips_mixed_axis_physical_units(
     assert loaded.header.physical_units == (0.0005, 0.01)
     assert loaded.header.physical_units_labels == ('seconds', 'micrometer')
     np.testing.assert_array_equal(loaded.get_array(0), pixels.get_array(0))
+
+
+@pytest.mark.parametrize(
+    ('dims', 'shape', 'units', 'labels', 'expected_types'),
+    [
+        (('Y', 'X'), (6, 4), (0.5, 0.25), ('micrometer', 'micrometer'), ['space', 'space']),
+        (
+            ('C', 'Y', 'X'),
+            (2, 6, 4),
+            (1.0, 0.5, 0.25),
+            ('Pixels', 'micrometer', 'micrometer'),
+            ['channel', 'space', 'space'],
+        ),
+        (
+            ('Z', 'C', 'Y', 'X'),
+            (3, 2, 6, 4),
+            (1.0, 1.0, 0.5, 0.25),
+            ('micrometer', 'Pixels', 'micrometer', 'micrometer'),
+            ['space', 'channel', 'space', 'space'],
+        ),
+    ],
+)
+def test_conventional_spatial_metadata_is_unchanged(
+    tmp_path: Path,
+    make_pixels: Callable[..., AcqPixels],
+    dims: tuple[str, ...],
+    shape: tuple[int, ...],
+    units: tuple[float, ...],
+    labels: tuple[str, ...],
+    expected_types: list[str],
+) -> None:
+    """Conventional YX/CYX/ZCYX axes retain calibrated NGFF metadata."""
+    pixels = make_pixels(
+        tmp_path / 'spatial.ome.zarr',
+        data=np.zeros(shape, dtype=np.uint16),
+        dims=dims,
+        physical_units=units,
+        physical_units_labels=labels,
+    )
+
+    metadata = build_ome_ngff_metadata(pixels)
+
+    assert [axis['type'] for axis in metadata['axes']] == expected_types
+    assert metadata['datasets'][0]['coordinateTransformations'][0]['scale'] == list(units)
+    for axis, label in zip(metadata['axes'], labels, strict=True):
+        assert axis.get('unit') == (None if label == 'Pixels' else label)
 
 
 def test_pure_ome_zarr_round_trips_spatial_physical_units(
@@ -68,7 +174,7 @@ def test_pure_ome_zarr_v2_round_trips_calibration(
     tmp_path: Path,
     make_pixels: Callable[..., AcqPixels],
 ) -> None:
-    """Optional Zarr v2 / NGFF 0.4 export must preserve calibration too."""
+    """Optional Zarr v2 / NGFF 0.4 export preserves existing calibration."""
     path = tmp_path / 'sample_v2.ome.zarr'
     pixels = make_pixels(path)
 

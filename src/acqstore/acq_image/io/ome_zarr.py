@@ -28,6 +28,19 @@ from acqstore.acq_image.io.store_utils import (
 _OME_NGFF_VERSION_BY_FORMAT = {2: '0.4', 3: '0.5'}
 _DEFAULT_ZARR_FORMAT = 3
 _MIN_PYRAMID_SPATIAL_SIZE = 16
+_TEMPORAL_UNIT_LABELS = {
+    's',
+    'sec',
+    'second',
+    'seconds',
+    'ms',
+    'millisecond',
+    'milliseconds',
+    'us',
+    'µs',
+    'microsecond',
+    'microseconds',
+}
 
 
 def _import_zarr() -> Any:
@@ -153,6 +166,34 @@ def _scale_vector(header: ImageHeader) -> list[float]:
     return scale
 
 
+def _ngff_calibration(
+    pixels: AcqPixels,
+    *,
+    safe_raster_temporal_y: bool,
+) -> tuple[list[str | None], list[float]]:
+    """Return OME-safe axis units and scales for ``pixels``.
+
+    AcqStore kymographs retain the raster label ``Y`` while assigning that axis
+    temporal calibration. OME-NGFF treats ``Y`` as spatial, so its public raster
+    metadata must not attach a time unit to that axis. The authoritative
+    kymograph calibration remains in AcqStore-owned metadata or the web manifest.
+    """
+    units = [_axis_unit(axis, pixels.header) for axis in pixels.axes]
+    scales = _scale_vector(pixels.header)
+    if 'Y' not in pixels.axes:
+        return units, scales
+
+    y_index = pixels.axes.index('Y')
+    y_unit = units[y_index]
+    if y_unit is None or y_unit.strip().lower() not in _TEMPORAL_UNIT_LABELS:
+        return units, scales
+    if not safe_raster_temporal_y:
+        return units, scales
+    units[y_index] = None
+    scales[y_index] = 1.0
+    return units, scales
+
+
 def build_ome_ngff_metadata(
     pixels: AcqPixels,
     *,
@@ -272,6 +313,7 @@ def write_acq_pixels_ome_zarr(
                 overwrite=True,
                 zarr_format=zarr_format,
                 include_acqstore_pixels=include_acqstore_pixels,
+                safe_raster_temporal_y=False,
             )
             zip_directory_store(tmp_store, path, overwrite=overwrite)
         return
@@ -281,6 +323,29 @@ def write_acq_pixels_ome_zarr(
         overwrite=overwrite,
         zarr_format=zarr_format,
         include_acqstore_pixels=include_acqstore_pixels,
+        safe_raster_temporal_y=False,
+    )
+
+
+def _write_acq_pixels_ome_zarr_for_web(
+    pixels: AcqPixels,
+    path: str | Path,
+    *,
+    overwrite: bool = False,
+    zarr_format: int = _DEFAULT_ZARR_FORMAT,
+) -> None:
+    """Write Web Dataset pixels with temporal Y as safe raster metadata."""
+    _ngff_version_for_zarr_format(zarr_format)
+    _validate_pixels_for_ome_zarr(pixels)
+    if is_zip_store_path(path):
+        raise ValueError('Web Dataset OME-Zarr writes require directory stores')
+    _write_acq_pixels_ome_zarr_directory(
+        pixels,
+        path,
+        overwrite=overwrite,
+        zarr_format=zarr_format,
+        include_acqstore_pixels=False,
+        safe_raster_temporal_y=True,
     )
 
 
@@ -291,10 +356,10 @@ def _validate_pixels_for_ome_zarr(pixels: AcqPixels) -> None:
         raise ValueError(f'Pixel array shape {data_shape!r} does not match header shape {pixels.shape!r}')
     if len(pixels.axes) != len(pixels.shape):
         raise ValueError(f'Axes {pixels.axes!r} do not match shape {pixels.shape!r}')
-    _scale_vector(pixels.header)
     for axis in pixels.axes:
         _axis_type(axis)
         _axis_unit(axis, pixels.header)
+    _scale_vector(pixels.header)
 
 
 def _write_acq_pixels_ome_zarr_directory(
@@ -304,12 +369,17 @@ def _write_acq_pixels_ome_zarr_directory(
     overwrite: bool,
     zarr_format: int,
     include_acqstore_pixels: bool,
+    safe_raster_temporal_y: bool,
 ) -> None:
     if not is_s3_path(path):
         ensure_store_absent(path, overwrite=overwrite)
     writer_cls = _import_bioio_writer()
     arr = np.asarray(pixels.get_array(0))
     level_shapes = build_multiscale_level_shapes(tuple(int(x) for x in arr.shape), pixels.axes)
+    axes_units, physical_pixel_size = _ngff_calibration(
+        pixels,
+        safe_raster_temporal_y=safe_raster_temporal_y,
+    )
     writer = writer_cls(
         store=str(path),
         level_shapes=level_shapes,
@@ -317,8 +387,8 @@ def _write_acq_pixels_ome_zarr_directory(
         zarr_format=zarr_format,
         axes_names=[axis.lower() for axis in pixels.axes],
         axes_types=[_axis_type(axis) for axis in pixels.axes],
-        axes_units=[_axis_unit(axis, pixels.header) for axis in pixels.axes],
-        physical_pixel_size=_scale_vector(pixels.header),
+        axes_units=axes_units,
+        physical_pixel_size=physical_pixel_size,
         image_name=Path(str(path).rstrip('/')).name,
         creator_info={'name': 'acqstore', 'version': '0.1'} if zarr_format == 3 else None,
     )
