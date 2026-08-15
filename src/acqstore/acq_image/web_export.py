@@ -15,11 +15,12 @@ import re
 import shutil
 import tempfile
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -105,15 +106,11 @@ def export_acq_image_list(
             detail = _write_acq_image_package(acq_image, image_dir, image_id=image_id)
             index_images.append(_build_dataset_image_index(detail, image_id=image_id))
 
-        payload = {
-            "format": WEB_DATASET_FORMAT,
-            "format_version": WEB_FORMAT_VERSION,
-            "id": dataset_id,
-            "name": dataset_name,
-            "acqstore_version": _acqstore_version(),
-            "created_utc": _utc_now_iso(),
-            "images": index_images,
-        }
+        payload = build_dataset_document(
+            dataset_id=dataset_id,
+            name=dataset_name,
+            images=index_images,
+        )
         _write_json(staging / "dataset.json", payload)
 
     _replace_directory_atomically(dest, overwrite=overwrite, build=build)
@@ -166,6 +163,44 @@ def load_and_export_web_dataset(
     )
 
 
+def build_dataset_document(
+    *,
+    dataset_id: str,
+    name: str,
+    images: list[dict[str, Any]],
+    created_utc: str | None = None,
+) -> dict[str, Any]:
+    """Build an AcqStore Web Dataset v1 manifest without writing files."""
+    return {
+        "format": WEB_DATASET_FORMAT,
+        "format_version": WEB_FORMAT_VERSION,
+        "id": dataset_id,
+        "name": name,
+        "acqstore_version": _acqstore_version(),
+        "created_utc": created_utc or _utc_now_iso(),
+        "images": images,
+    }
+
+
+def build_dataset_image_index(
+    detail: dict[str, Any],
+    *,
+    image_id: str,
+    href: str | None = None,
+) -> dict[str, Any]:
+    """Build one dataset manifest row from an AcqImage web document."""
+    row = _build_dataset_image_index(detail, image_id=image_id)
+    if href is not None:
+        row["href"] = href
+    return row
+
+
+def web_image_id(acq_image: AcqImage, *, source_root: str | Path | None = None) -> str:
+    """Return the stable web identifier for an AcqImage."""
+    root = None if source_root is None else Path(source_root).expanduser().resolve(strict=False)
+    return _list_image_id(acq_image, source_root=root)
+
+
 def _write_acq_image_package(acq_image: AcqImage, image_dir: Path, *, image_id: str) -> dict[str, Any]:
     image_dir.mkdir(parents=True, exist_ok=False)
 
@@ -175,7 +210,6 @@ def _write_acq_image_package(acq_image: AcqImage, image_dir: Path, *, image_id: 
         overwrite=False,
     )
 
-    reference_payload: dict[str, Any] | None = None
     reference = acq_image.images.reference_image
     if reference is not None:
         _write_acq_pixels_ome_zarr_for_web(
@@ -183,30 +217,67 @@ def _write_acq_image_package(acq_image: AcqImage, image_dir: Path, *, image_id: 
             image_dir / "reference.ome.zarr",
             overwrite=False,
         )
-        reference_payload = _build_reference_payload(acq_image, reference)
 
     analyses_payload = _export_completed_analyses(acq_image, image_dir)
-    image_payload = _build_image_payload(acq_image)
-    payload = {
+    payload = build_acq_image_document(
+        acq_image,
+        image_id=image_id,
+        analyses=analyses_payload,
+    )
+    _write_json(image_dir / "acqimage.json", payload)
+    return payload
+
+
+def build_acq_image_document(
+    acq_image: AcqImage,
+    *,
+    image_id: str,
+    image_href: str = "image.ome.zarr",
+    reference_href: str = "reference.ome.zarr",
+    analyses: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build the frontend-neutral AcqImage web document without writing files.
+
+    Args:
+        acq_image: Loaded acquisition domain object.
+        image_id: Stable image identifier used by the containing dataset.
+        image_href: Resource link for primary pixels.
+        reference_href: Resource link for optional reference pixels.
+        analyses: Optional prebuilt analysis documents. When omitted, completed
+            analyses are described using relative static-export links.
+
+    Returns:
+        JSON-safe AcqStore Web AcqImage v1 document.
+    """
+    reference = acq_image.images.reference_image
+    resolved_analyses = analyses
+    if resolved_analyses is None:
+        resolved_analyses = [
+            build_analysis_document(analysis)
+            for analysis in completed_analyses(acq_image)
+        ]
+    return {
         "format": WEB_ACQIMAGE_FORMAT,
         "format_version": WEB_FORMAT_VERSION,
         "id": image_id,
         "name": acq_image.name,
         "accepted": bool(acq_image.get_schema_row()["accept"]),
-        "image": image_payload,
+        "image": _build_image_payload(acq_image, href=image_href),
         "rois": [_export_roi(roi) for roi in acq_image.rois],
-        "analyses": analyses_payload,
+        "analyses": resolved_analyses,
         "metadata": {
             "experiment": _jsonable(acq_image.get_metadata_section("experiment_metadata").get_values()),
             "image_header": _jsonable(acq_image.get_metadata_section("acq_image_header").get_values()),
         },
-        "reference_image": reference_payload,
+        "reference_image": (
+            None
+            if reference is None
+            else _build_reference_payload(acq_image, reference, href=reference_href)
+        ),
     }
-    _write_json(image_dir / "acqimage.json", payload)
-    return payload
 
 
-def _build_image_payload(acq_image: AcqImage) -> dict[str, Any]:
+def _build_image_payload(acq_image: AcqImage, *, href: str = "image.ome.zarr") -> dict[str, Any]:
     pixels = acq_image.pixels
     header = pixels.header.with_coerced_physical_calibration()
     channels: list[dict[str, Any]] = []
@@ -219,7 +290,7 @@ def _build_image_payload(acq_image: AcqImage) -> dict[str, Any]:
             }
         )
     return {
-        "href": "image.ome.zarr",
+        "href": href,
         **_pixel_descriptor(pixels),
         "default_channel": pixels.default_channel,
         "channels": channels,
@@ -230,7 +301,12 @@ def _build_image_payload(acq_image: AcqImage) -> dict[str, Any]:
     }
 
 
-def _build_reference_payload(acq_image: AcqImage, reference: Any) -> dict[str, Any]:
+def _build_reference_payload(
+    acq_image: AcqImage,
+    reference: Any,
+    *,
+    href: str = "reference.ome.zarr",
+) -> dict[str, Any]:
     data = np.asarray(reference.array)
     dims = [str(dim).lower() for dim in reference.dims]
     shape = [int(v) for v in data.shape]
@@ -254,7 +330,7 @@ def _build_reference_payload(acq_image: AcqImage, reference: Any) -> dict[str, A
         )
     metadata = _jsonable(acq_image.get_metadata_section("reference_image_metadata").get_values())
     return {
-        "href": "reference.ome.zarr",
+        "href": href,
         "shape": shape,
         "dims": dims,
         "sizes": {dim: shape[i] for i, dim in enumerate(dims)},
@@ -317,12 +393,17 @@ def _export_roi(roi: Any) -> dict[str, Any]:
 
 
 def _export_completed_analyses(acq_image: AcqImage, image_dir: Path) -> list[dict[str, Any]]:
-    completed = [a for a in acq_image.analysis_set.as_list() if a.result.table is not None]
-    completed.sort(key=lambda a: (a.key.analysis_name, a.key.channel, a.key.roi_id))
     out: list[dict[str, Any]] = []
-    for analysis in completed:
+    for analysis in completed_analyses(acq_image):
         out.append(_export_analysis(analysis, image_dir))
     return out
+
+
+def completed_analyses(acq_image: AcqImage) -> tuple[BaseAnalysis, ...]:
+    """Return completed analyses in stable web-document order."""
+    completed = [a for a in acq_image.analysis_set.as_list() if a.result.table is not None]
+    completed.sort(key=lambda a: (a.key.analysis_name, a.key.channel, a.key.roi_id))
+    return tuple(completed)
 
 
 def _export_analysis(analysis: BaseAnalysis, image_dir: Path) -> dict[str, Any]:
@@ -368,11 +449,51 @@ def _export_analysis(analysis: BaseAnalysis, image_dir: Path) -> dict[str, Any]:
             "count": len(peak_rows),
         }
 
+    return build_analysis_document(
+        analysis,
+        table_href=(rel_dir / "table.csv").as_posix(),
+        plot_href=None if plot_payload is None else plot_payload["href"],
+        peaks_href=None if peaks_payload is None else peaks_payload["href"],
+    )
+
+
+def build_analysis_document(
+    analysis: BaseAnalysis,
+    *,
+    table_href: str | None = None,
+    plot_href: str | None = None,
+    peaks_href: str | None = None,
+) -> dict[str, Any]:
+    """Build one analysis web document without writing its tabular resources."""
+    analysis_id = _analysis_id(
+        analysis.key.analysis_name,
+        channel=int(analysis.key.channel),
+        roi_id=int(analysis.key.roi_id),
+    )
+    rel_dir = Path("analysis") / analysis_id
+    plot_data = analysis.get_plot_data()
     display_name = (
         str(plot_data.series_name)
         if plot_data is not None and str(plot_data.series_name).strip()
         else analysis.key.analysis_name.replace("_", " ").title()
     )
+    plot_payload = None
+    if plot_data is not None:
+        plot_payload = {
+            "href": plot_href or (rel_dir / "plot.csv").as_posix(),
+            "x_column": "x",
+            "y_column": "y",
+            "x_label": str(plot_data.x_label),
+            "y_label": str(plot_data.y_label),
+            "series_name": str(plot_data.series_name),
+        }
+    peaks_payload = None
+    peak_rows_getter = getattr(analysis, "get_pool_peak_rows", None)
+    if callable(peak_rows_getter):
+        peaks_payload = {
+            "href": peaks_href or (rel_dir / "peaks.csv").as_posix(),
+            "count": len(tuple(peak_rows_getter())),
+        }
     payload: dict[str, Any] = {
         "id": analysis_id,
         "analysis_type": str(analysis.key.analysis_name),
@@ -380,12 +501,39 @@ def _export_analysis(analysis: BaseAnalysis, image_dir: Path) -> dict[str, Any]:
         "channel": int(analysis.key.channel),
         "roi_id": int(analysis.key.roi_id),
         "summary": _jsonable(analysis.result.summary),
-        "table": {"href": (rel_dir / "table.csv").as_posix()},
+        "table": {"href": table_href or (rel_dir / "table.csv").as_posix()},
         "plot": plot_payload,
     }
     if peaks_payload is not None:
         payload["peaks"] = peaks_payload
     return payload
+
+
+def analysis_plot_csv(analysis: BaseAnalysis) -> str:
+    """Return one completed analysis plot as CSV text for HTTP or file delivery."""
+    plot_data = analysis.get_plot_data()
+    if plot_data is None:
+        raise ValueError(f"Analysis {analysis.key.analysis_name!r} has no plot data")
+    return pd.DataFrame({"x": list(plot_data.x), "y": list(plot_data.y)}).to_csv(index=False)
+
+
+def analysis_table_csv(analysis: BaseAnalysis) -> str:
+    """Return one completed analysis result table as CSV text."""
+    table = analysis.result.table
+    if table is None:
+        raise ValueError(f"Analysis {analysis.key.analysis_name!r} has no result table")
+    return table.to_csv(index=False)
+
+
+def analysis_peaks_csv(analysis: BaseAnalysis) -> str:
+    """Return one analysis peak table as CSV text."""
+    rows_getter = getattr(analysis, "get_pool_peak_rows", None)
+    columns_getter = getattr(analysis, "get_pool_peak_columns", None)
+    if not callable(rows_getter):
+        raise ValueError(f"Analysis {analysis.key.analysis_name!r} has no peak data")
+    rows = tuple(rows_getter())
+    columns = tuple(columns_getter()) if callable(columns_getter) else ()
+    return pd.DataFrame(list(rows), columns=list(columns) or None).to_csv(index=False)
 
 
 def _build_dataset_image_index(detail: dict[str, Any], *, image_id: str) -> dict[str, Any]:
@@ -533,4 +681,4 @@ def _acqstore_version() -> str:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")

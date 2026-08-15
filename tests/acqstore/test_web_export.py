@@ -13,7 +13,14 @@ from acqstore.acq_image.acq_image import AcqImage
 from acqstore.acq_image.acq_image_list import AcqImageList
 from acqstore.acq_image.analysis.model import AnalysisPlotData, AnalysisResult, BaseAnalysis
 from acqstore.acq_image.roi import RectRoiBounds
-from acqstore.acq_image.web_export import export_acq_image, export_acq_image_list
+from acqstore.acq_image.web_export import (
+    build_acq_image_document,
+    build_analysis_document,
+    build_dataset_document,
+    build_dataset_image_index,
+    export_acq_image,
+    export_acq_image_list,
+)
 
 
 class _PlotAnalysis(BaseAnalysis):
@@ -125,6 +132,34 @@ def test_export_acq_image_writes_thin_web_contract(tmp_path: Path, monkeypatch: 
     assert (destination / by_type["sum_intensity"]["peaks"]["href"]).is_file()
     assert (destination / "image.ome.zarr").is_dir()
     assert str(tmp_path) not in (destination / "acqimage.json").read_text(encoding="utf-8")
+
+
+def test_web_document_builders_are_transport_neutral() -> None:
+    acq = _acq()
+    analysis = acq.analysis_set.as_list()[0]
+    analysis_document = build_analysis_document(
+        analysis,
+        table_href="/api/table.csv",
+        plot_href="/api/plot.csv",
+    )
+    detail = build_acq_image_document(
+        acq,
+        image_id="image-1",
+        image_href="/api/planes",
+        analyses=[analysis_document],
+    )
+    row = build_dataset_image_index(detail, image_id="image-1", href="/api/images/image-1")
+    dataset = build_dataset_document(
+        dataset_id="dataset-1",
+        name="Live dataset",
+        images=[row],
+        created_utc="2026-08-14T00:00:00Z",
+    )
+
+    assert detail["image"]["href"] == "/api/planes"
+    assert detail["analyses"][0]["plot"]["href"] == "/api/plot.csv"
+    assert dataset["images"][0]["href"] == "/api/images/image-1"
+    assert dataset["format_version"] == 1
 
 
 def test_export_skips_analysis_without_result_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
