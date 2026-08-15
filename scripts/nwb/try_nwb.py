@@ -148,5 +148,22 @@ def main() -> None:
     )
 
 
+def main_2():
+    from acqstore.acq_image import AcqImage
+
+    file_path = '/Users/cudmore/Sites/cs_project/cloudscope-data/data-samples/velocity-sample-data/7d Control/20251014/20251014_A98_0002.oir'
+    acq_image = AcqImage(file_path)
+
+    save_path = '/Users/cudmore/Desktop/tmp/my-nwb.nwb'
+    acq_image.save_as_nwb(save_path, overwrite=True)
+
+    acq_image_2 = AcqImage(save_path)
+
+    acq_image_2 = AcqImage.from_nwb(save_path)
+    pixels = acq_image_2.pixels
+    pixels = acq_image_2.pixels
+    print(pixels.shape)
+
 if __name__ == "__main__":
-    main()
+    # main()
+    main_2()

@@ -44,6 +44,11 @@ dependencies = [
     "bioio-ome-zarr>=3.5.1",
 ]
 
+[project.optional-dependencies]
+nwb = [
+    "pynwb>=4.1.0,<5",
+]
+
 [build-system]
 requires = ["uv_build>=0.9.2,<0.10.0"]
 build-backend = "uv_build"
@@ -96,8 +101,3 @@ indent-style = "space"
 Homepage = "https://github.com/mapmanager/acqstore"
 Repository = "https://github.com/mapmanager/acqstore"
 Issues = "https://github.com/mapmanager/acqstore/issues"
-
-[project.optional-dependencies]
-nwb = [
-    "pynwb>=4.1.0",
-]

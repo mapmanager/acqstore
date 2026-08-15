@@ -37,6 +37,9 @@ from acqstore.acq_image.file_loaders.base_file_loader import ImageHeader
 from acqstore.acq_image.file_loaders.nwb_file_loader import NwbFileLoader
 from acqstore.acq_image.persistence import NwbPersistence
 
+from acqstore.utils.logging import get_logger
+logger = get_logger(__name__)
+
 if TYPE_CHECKING:
     from acqstore.acq_image.acq_image import AcqImage
     from acqstore.acq_image.acq_image_list import AcqImageList
@@ -648,10 +651,11 @@ def _add_acq_image_to_nwbfile(
             f"got axes={axes!r} for {acq_image.file_id!r}"
         )
     if acq_image.images.has_reference_image:
-        raise ValueError(
-            "AcqStore NWB v1 does not yet export reference-image pixels; "
-            f"cannot losslessly export {acq_image.file_id!r}"
-        )
+        logger.info(f'AcqStore NWB v1 does not yet export reference-image pixels; cannot losslessly export {acq_image.file_id!r}')
+        # raise ValueError(
+        #     "AcqStore NWB v1 does not yet export reference-image pixels; "
+        #     f"cannot losslessly export {acq_image.file_id!r}"
+        # )
 
     images_container_name = f"{image_id}_images"
     images_container = api.Images(

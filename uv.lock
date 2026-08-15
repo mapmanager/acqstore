@@ -69,7 +69,7 @@ requires-dist = [
     { name = "plotly", specifier = ">=6.7.0" },
     { name = "pooch", specifier = ">=1.9.0" },
     { name = "pyabf", specifier = ">=2.3.8" },
-    { name = "pynwb", marker = "extra == 'nwb'", specifier = ">=4.1.0" },
+    { name = "pynwb", marker = "extra == 'nwb'", specifier = ">=4.1.0,<5" },
     { name = "s3fs", specifier = ">=2026.6.0" },
     { name = "scikit-image", specifier = ">=0.24.0" },
     { name = "scipy", specifier = ">=1.17.1" },
