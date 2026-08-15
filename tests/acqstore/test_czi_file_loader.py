@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -301,3 +302,14 @@ def test_czi_reference_image_reuses_cached_array_without_rediscovering() -> None
     assert reference is not None
     mock_find.assert_not_called()
     np.testing.assert_array_equal(reference.array, cached)
+
+
+def test_czi_unload_reference_data_releases_all_decoded_caches() -> None:
+    with patch.object(CziFileLoader, '_open_czi', _fake_open_czi_reference):
+        loader = CziFileLoader('/tmp/reference.czi')
+        assert loader.reference_image is not None
+
+    loader.unload_reference_data()
+
+    assert loader.reference_data_loaded is False
+    assert loader._cached_reference_array is None

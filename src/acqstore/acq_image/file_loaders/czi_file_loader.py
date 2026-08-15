@@ -103,6 +103,11 @@ class CziFileLoader(BaseFileLoader):
         """
         return self._read_czi_header()
 
+    def unload_reference_data(self) -> None:
+        """Drop both the normalized reference snapshot and decoded attachment."""
+        super().unload_reference_data()
+        self._cached_reference_array = None
+
     def _physical_units_for_header(self, scene: Any) -> tuple[tuple[Any, ...], tuple[str, ...]]:
         """Return per-axis physical calibration from a czifile scene.
 

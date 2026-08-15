@@ -591,6 +591,11 @@ class BaseFileLoader:
         """Drop reference-image caches."""
         self._referenceImage = None
 
+    @property
+    def reference_data_loaded(self) -> bool:
+        """Return whether a decoded reference-image snapshot is resident."""
+        return self._referenceImage is not None
+
     def unload_all_cached_data(self) -> None:
         """Clear primary pixels and reference caches.
 

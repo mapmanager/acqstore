@@ -18,6 +18,7 @@ from acqstore.acq_image.web_export import (
     build_analysis_document,
     build_dataset_document,
     build_dataset_image_index,
+    build_dataset_image_index_from_acq_image,
     export_acq_image,
     export_acq_image_list,
 )
@@ -160,6 +161,23 @@ def test_web_document_builders_are_transport_neutral() -> None:
     assert detail["analyses"][0]["plot"]["href"] == "/api/plot.csv"
     assert dataset["images"][0]["href"] == "/api/images/image-1"
     assert dataset["format_version"] == 1
+
+
+def test_web_document_builders_do_not_load_lazy_pixels() -> None:
+    acq = _acq()
+    acq.unload_images()
+    assert not acq.images_loaded
+
+    detail = build_acq_image_document(acq, image_id="image-1", analyses=[])
+    row = build_dataset_image_index_from_acq_image(
+        acq,
+        image_id="image-1",
+        href="/api/images/image-1",
+    )
+
+    assert detail["image"]["dtype"] == "uint16"
+    assert row["shape"] == list(acq.images.header.shape)
+    assert not acq.images_loaded
 
 
 def test_export_skips_analysis_without_result_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

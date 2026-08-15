@@ -195,6 +195,38 @@ def build_dataset_image_index(
     return row
 
 
+def build_dataset_image_index_from_acq_image(
+    acq_image: AcqImage,
+    *,
+    image_id: str,
+    href: str,
+) -> dict[str, Any]:
+    """Build a manifest row from header and sidecar metadata only.
+
+    This function deliberately avoids :attr:`AcqImage.pixels` and analysis CSV
+    tables so collection discovery remains memory-bounded.
+    """
+    image = _build_image_payload(acq_image)
+    return {
+        "id": image_id,
+        "name": acq_image.name,
+        "href": href,
+        "shape": list(image["shape"]),
+        "dims": list(image["dims"]),
+        "sizes": dict(image["sizes"]),
+        "dtype": image["dtype"],
+        "axes": list(image["axes"]),
+        "acquisition": dict(image["acquisition"]),
+        "num_channels": int(image["num_channels"]),
+        "num_rois": int(acq_image.rois.num_rois),
+        "analysis_types": sorted(
+            {str(analysis.key.analysis_name) for analysis in acq_image.analysis_set.as_list()}
+        ),
+        "accepted": bool(acq_image.get_schema_row()["accept"]),
+        "has_reference_image": bool(acq_image.images.has_reference_image),
+    }
+
+
 def web_image_id(acq_image: AcqImage, *, source_root: str | Path | None = None) -> str:
     """Return the stable web identifier for an AcqImage."""
     root = None if source_root is None else Path(source_root).expanduser().resolve(strict=False)
@@ -278,10 +310,9 @@ def build_acq_image_document(
 
 
 def _build_image_payload(acq_image: AcqImage, *, href: str = "image.ome.zarr") -> dict[str, Any]:
-    pixels = acq_image.pixels
-    header = pixels.header.with_coerced_physical_calibration()
+    header = acq_image.images.header.with_coerced_physical_calibration()
     channels: list[dict[str, Any]] = []
-    for channel in pixels.channel_indices:
+    for channel in range(int(header.num_channels)):
         contrast = acq_image.get_image_contrast(channel)
         channels.append(
             {
@@ -291,8 +322,8 @@ def _build_image_payload(acq_image: AcqImage, *, href: str = "image.ome.zarr") -
         )
     return {
         "href": href,
-        **_pixel_descriptor(pixels),
-        "default_channel": pixels.default_channel,
+        **_header_pixel_descriptor(header),
+        "default_channel": 0 if header.num_channels > 0 else None,
         "channels": channels,
         "acquisition": {
             "date": str(header.date or ""),
@@ -342,9 +373,14 @@ def _build_reference_payload(
 
 
 def _pixel_descriptor(pixels: AcqPixels) -> dict[str, Any]:
-    header = pixels.header.with_coerced_physical_calibration()
-    dims = [str(dim).lower() for dim in pixels.axes]
-    shape = [int(v) for v in pixels.shape]
+    return _header_pixel_descriptor(pixels.header)
+
+
+def _header_pixel_descriptor(header: Any) -> dict[str, Any]:
+    """Build a pixel descriptor from an ImageHeader without loading pixels."""
+    header = header.with_coerced_physical_calibration()
+    dims = [str(dim).lower() for dim in header.dims]
+    shape = [int(v) for v in header.shape]
     sizes = {dim: shape[i] for i, dim in enumerate(dims)}
     axes = []
     for i, dim in enumerate(dims):
@@ -360,9 +396,9 @@ def _pixel_descriptor(pixels: AcqPixels) -> dict[str, Any]:
         "shape": shape,
         "dims": dims,
         "sizes": sizes,
-        "dtype": str(pixels.dtype),
+        "dtype": str(header.dtype),
         "axes": axes,
-        "num_channels": int(pixels.num_channels),
+        "num_channels": int(header.num_channels),
     }
 
 
