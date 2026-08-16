@@ -16,9 +16,9 @@ def create_file_loader(path: str) -> BaseFileLoader:
 
     AcqStore selects a loader from the file extension. Supported formats include
     proprietary microscopy files (``.oir``, ``.czi``, ``.nd2``) and open formats
-    (``.tif``, ``.ome.zarr``). The native ``.cs.ome.zarr`` variant is registered
-    for stores that carry AcqStore metadata, ROIs, and analysis; that format is
-    still under development.
+    (``.tif``, ``.ome.zarr``, ``.nwb``). The native ``.cs.ome.zarr`` variant is
+    registered for stores that carry AcqStore metadata, ROIs, and analysis;
+    that format is still under development.
 
     Only extensions listed in :func:`get_allowed_import_extensions` are supported.
     Comparison is case-insensitive. Directory-backed OME-Zarr stores are detected

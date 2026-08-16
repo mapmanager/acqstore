@@ -46,6 +46,7 @@ dependencies = [
 
 [project.optional-dependencies]
 nwb = [
+    "nwbinspector>=0.7.2",
     "pynwb>=4.1.0,<5",
 ]
 

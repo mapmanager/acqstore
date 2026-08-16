@@ -30,6 +30,7 @@ def test_supported_import_extensions_are_loader_backed() -> None:
         'cs.ome.zarr.zip',
         'czi',
         'nd2',
+        'nwb',
         'oir',
         'ome.zarr',
         'ome.zarr.zip',

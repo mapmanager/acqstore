@@ -150,19 +150,49 @@ def main() -> None:
 
 def main_2():
     from acqstore.acq_image import AcqImage
+    from acqstore.nwb_io import NwbMetadata, NwbSubjectMetadata
 
+    # load one image
     file_path = '/Users/cudmore/Sites/cs_project/cloudscope-data/data-samples/velocity-sample-data/7d Control/20251014/20251014_A98_0002.oir'
     acq_image = AcqImage(file_path)
 
+    # fill in dandi info
+    header = acq_image.images.header
+    session_start_time = datetime.strptime(
+        f'{header.date} {header.time}',
+        '%Y%m%d %H:%M:%S',
+    ).replace(tzinfo=ZoneInfo('America/New_York'))
+
     save_path = '/Users/cudmore/Desktop/tmp/my-nwb.nwb'
-    acq_image.save_as_nwb(save_path, overwrite=True)
+    metadata = NwbMetadata(
+        subject=NwbSubjectMetadata(
+            subject_id='A98',
+            species='Mus musculus',
+            sex='M',
+            age='P14D',
+            description='Subject A98.',
+        ),
+        session_start_time=session_start_time,
+        experimenter=('Manning, Declan',),
+        keywords=(
+            'microscopy',
+            'kymograph',
+            'vascular imaging',
+            'blood flow',
+            'velocity analysis',
+        ),
+    )
+    acq_image.save_as_nwb(
+        save_path,
+        metadata=metadata,
+        overwrite=True,
+    )
 
     acq_image_2 = AcqImage(save_path)
 
     acq_image_2 = AcqImage.from_nwb(save_path)
     pixels = acq_image_2.pixels
-    pixels = acq_image_2.pixels
-    print(pixels.shape)
+    print(f'pixels.shape: {pixels.shape}')
 
 if __name__ == "__main__":
     # main()

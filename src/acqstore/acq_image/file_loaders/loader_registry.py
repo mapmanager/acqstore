@@ -8,6 +8,7 @@ from .base_file_loader import BaseFileLoader
 from .czi_file_loader import CziFileLoader
 from .oir_file_loader import OirFileLoader
 from .nd2_file_loader import Nd2FileLoader
+from .nwb_file_loader import NwbFileLoader
 from .ome_zarr_file_loader import OmeZarrFileLoader
 from .tiff_file_loader import TiffFileLoader
 
@@ -18,6 +19,7 @@ _FILE_LOADER_FACTORIES: dict[str, FileLoaderFactory] = {
     'oir': OirFileLoader,
     'czi': CziFileLoader,
     'nd2': Nd2FileLoader,
+    'nwb': NwbFileLoader,
     'ome.zarr': OmeZarrFileLoader,
     'cs.ome.zarr': OmeZarrFileLoader,
     'ome.zarr.zip': OmeZarrFileLoader,

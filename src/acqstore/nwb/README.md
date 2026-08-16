@@ -8,6 +8,8 @@ lives in `src/acqstore/nwb_io.py`; NWB-specific pixel loading lives in
 
 Current NWB support is intentionally narrow:
 
+- Stock NWB import for embedded static `Images` / `GrayscaleImage` data; no
+  AcqStore metadata is required.
 - `AcqImage` primary pixels with axes `YX` or `CYX`.
 - `AcqImageList` stored in one NWB file as multiple independent image members.
 - Collection members may have unrelated YX shapes and channel counts.
@@ -19,6 +21,14 @@ Current NWB support is intentionally narrow:
 - Primary pixels and analysis tables are lazy on NWB import by default.
 - Reference-image pixels, `ZYX`, and `ZCYX` are not implemented in this version.
   Export rejects reference-image sources rather than silently dropping pixels.
+
+For a stock NWB file, every `GrayscaleImage` is an independent logical `YX`
+image. Standard NWB does not say that equal-shaped images in one `Images`
+container are channels or Z planes, so AcqStore does not infer that meaning.
+`AcqImage(path)` works when exactly one supported logical image is present and
+raises an ambiguity error otherwise. Use `load_nwb_collection(path)` for all
+supported images. AcqStore-authored manifests explicitly define channel grouping,
+so native `CYX` exports reconstruct as one logical AcqImage.
 
 NWB import/export is separate from DANDI. DANDI upload/download is intentionally
 not implemented here yet. Before DANDI publication work, re-evaluate whether the
@@ -53,6 +63,15 @@ from acqstore.nwb_io import load_nwb, save_nwb
 
 img = load_nwb("image.nwb")
 save_nwb(img, "copy.nwb")
+```
+
+NWB is also registered as an ordinary acquisition loader. This uses normal
+`AcqImage` eager defaults:
+
+```python
+from acqstore.acq_image import AcqImage
+
+img = AcqImage("stock-single-image.nwb")
 ```
 
 Collection API:
@@ -124,9 +143,9 @@ is optional for local NWB export and can be supplied later for DANDI workflows.
 
 ## Lazy loading and memory behavior
 
-`load_nwb()` and `load_nwb_collection()` read only the NWB manifest, embedded
-AcqImage JSON, and small header metadata by default. They do not read primary
-pixel datasets or convert analysis DynamicTables to DataFrames.
+`load_nwb()` and `load_nwb_collection()` inspect NWB containers, dataset shapes,
+dtypes, and optional AcqStore manifests by default. They do not read primary
+pixel values or convert analysis DynamicTables to DataFrames.
 
 Collection export is also designed around AcqStore's lazy model. It writes one
 AcqImage at a time using separate PyNWB `r+` transactions:
@@ -183,3 +202,12 @@ uv run --extra nwb pynwb-validate path/to/file.nwb
 ```
 
 A successful validation prints `no errors found`.
+
+For the broader NWB Inspector checks recommended by DANDI:
+
+```bash
+uv run --extra nwb nwbinspector path/to/file.nwb
+```
+
+NWB Inspector includes schema validation unless `--skip-validate` is supplied
+and additionally reports NWB best-practice issues.

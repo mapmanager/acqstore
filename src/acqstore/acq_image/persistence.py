@@ -9,7 +9,6 @@ AcqImage's JSON sidecar state and tabular analysis results are read from.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -137,15 +136,15 @@ class NwbPersistence(AcqPersistenceBackend):
     Args:
         nwb_path: Physical local NWB file path.
         member_id: Logical AcqStore member identifier within the NWB file.
-        sidecar_payload: Existing AcqImage JSON payload embedded in the NWB
-            manifest.
+        sidecar_payload: Optional AcqImage JSON payload embedded in an AcqStore
+            manifest. Stock NWB members have no payload.
         analysis_tables: Mapping from AcqStore analysis name to NWB DynamicTable
             name for this member.
     """
 
     nwb_path: str
     member_id: str
-    sidecar_payload: dict[str, object]
+    sidecar_payload: dict[str, object] | None
     analysis_tables: dict[str, str]
 
     @property
@@ -166,10 +165,11 @@ class NwbPersistence(AcqPersistenceBackend):
         Returns:
             None.
         """
-        acq_image._load_sidecar_payload(
-            self.sidecar_payload,
-            source=f"{self.nwb_path}#{self.member_id}",
-        )
+        if self.sidecar_payload is not None:
+            acq_image._load_sidecar_payload(
+                self.sidecar_payload,
+                source=f"{self.nwb_path}#{self.member_id}",
+            )
 
     def load_analysis_tables(self, analysis_set: AcqAnalysisSet) -> None:
         """Load only this member's NWB DynamicTables into pandas DataFrames.
@@ -238,19 +238,30 @@ def create_persistence_backend(
     path: str,
     *,
     is_memory_backed: bool,
+    file_loader: Any | None = None,
 ) -> AcqPersistenceBackend | None:
     """Create the default persistence backend for an existing AcqImage source.
 
     Args:
         path: Acquisition source path.
-        is_memory_backed: Whether the AcqImage has no filesystem persistence
-            source.
+        is_memory_backed: Whether the AcqImage has no filesystem persistence source.
+        file_loader: Optional source loader carrying container member identity.
 
     Returns:
         Matching persistence backend, or ``None`` for in-memory acquisitions.
     """
     if is_memory_backed:
         return None
+    from .file_loaders.nwb_file_loader import NwbFileLoader
+
+    if isinstance(file_loader, NwbFileLoader):
+        member = file_loader.member
+        return NwbPersistence(
+            nwb_path=path,
+            member_id=member.member_id,
+            sidecar_payload=member.sidecar_payload,
+            analysis_tables=dict(member.analysis_tables),
+        )
     lower = path.lower()
     if lower.endswith((".cs.ome.zarr", ".cs.ome.zarr.zip")):
         return NativeZarrPersistence(path)

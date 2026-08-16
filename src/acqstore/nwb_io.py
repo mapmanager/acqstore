@@ -33,8 +33,11 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-from acqstore.acq_image.file_loaders.base_file_loader import ImageHeader
-from acqstore.acq_image.file_loaders.nwb_file_loader import NwbFileLoader
+from acqstore.acq_image.file_loaders.nwb_file_loader import (
+    NwbFileLoader,
+    NwbImageMember,
+    inspect_nwb_image_members,
+)
 from acqstore.acq_image.persistence import NwbPersistence
 
 from acqstore.utils.logging import get_logger
@@ -91,6 +94,10 @@ class NwbMetadata:
             ``America/New_York`` time is used when omitted.
         session_id: Optional NWB session identifier.
         subject: Optional structured subject metadata.
+        experimenter: Names of people who performed the experiment.
+        experiment_description: General description of the experiment.
+        institution: Institution where the experiment was performed.
+        keywords: Search terms describing the data.
     """
 
     session_description: str = "AcqStore acquisition"
@@ -98,6 +105,10 @@ class NwbMetadata:
     session_start_time: datetime | None = None
     session_id: str | None = None
     subject: NwbSubjectMetadata | None = None
+    experimenter: tuple[str, ...] | None = None
+    experiment_description: str | None = None
+    institution: str | None = None
+    keywords: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,7 +239,7 @@ def load_nwb(
     load_images: bool = False,
     load_analysis_csv: bool = False,
 ) -> AcqImage:
-    """Import one AcqStore NWB member lazily into an AcqImage.
+    """Import exactly one supported stock or AcqStore NWB image.
 
     Args:
         nwb_file: Local NWB file previously created by :func:`save_nwb`.
@@ -242,26 +253,12 @@ def load_nwb(
     Raises:
         FileNotFoundError: If ``nwb_file`` does not exist.
         ImportError: If optional NWB dependencies are not installed.
-        ValueError: If the file is not a supported AcqStore single-image NWB.
+        ValueError: If the file has zero or multiple supported logical images.
     """
-    api = _require_nwb()
     source = Path(nwb_file).expanduser().resolve(strict=True)
-
-    with api.NWBHDF5IO(path=source, mode="r", load_namespaces=True) as io:
-        nwbfile = io.read()
-        manifest = _read_json_scratch(nwbfile, _SINGLE_MANIFEST_NAME)
-        _validate_root_manifest(
-            manifest,
-            expected_version=_SINGLE_NWB_VERSION,
-            expected_kind="AcqImage",
-        )
-        image_manifest = manifest.get("image")
-        if not isinstance(image_manifest, dict):
-            raise ValueError("AcqStore NWB single-image manifest is missing 'image'")
-
     return _build_lazy_acq_image(
         source,
-        image_manifest,
+        member_id=None,
         load_images=load_images,
         load_analysis_csv=load_analysis_csv,
     )
@@ -372,7 +369,7 @@ def load_nwb_collection(
     load_images: bool = False,
     load_analysis_csv: bool = False,
 ) -> AcqImageList:
-    """Import an AcqStore collection NWB as a lazy AcqImageList.
+    """Import all supported stock or AcqStore NWB images as a lazy list.
 
     The NWB file is opened once to read the small collection manifest. Member
     pixels and DynamicTable contents are not read unless the corresponding
@@ -392,33 +389,25 @@ def load_nwb_collection(
     Raises:
         FileNotFoundError: If ``nwb_file`` does not exist.
         ImportError: If optional NWB dependencies are not installed.
-        ValueError: If the file is not a supported AcqStore collection NWB.
+        ValueError: If the file contains no supported logical images.
     """
     from acqstore.acq_image.acq_image_list import AcqImageList
 
-    api = _require_nwb()
     source = Path(nwb_file).expanduser().resolve(strict=True)
-
-    with api.NWBHDF5IO(path=source, mode="r", load_namespaces=True) as io:
-        nwbfile = io.read()
-        manifest = _read_json_scratch(nwbfile, _COLLECTION_MANIFEST_NAME)
-        _validate_root_manifest(
-            manifest,
-            expected_version=_COLLECTION_NWB_VERSION,
-            expected_kind="AcqImageList",
+    members = inspect_nwb_image_members(source)
+    if not members:
+        raise ValueError(
+            "NWB file contains no AcqStore-supported static images. This version "
+            "supports embedded Images/GrayscaleImage data."
         )
-        raw_images = manifest.get("images")
-        if not isinstance(raw_images, list) or not raw_images:
-            raise ValueError("AcqStore NWB collection manifest must contain images")
 
     images: list[AcqImage] = []
-    for image_manifest in raw_images:
-        if not isinstance(image_manifest, dict):
-            raise ValueError("AcqStore NWB collection image entry must be an object")
+    for member in members:
         images.append(
             _build_lazy_acq_image(
                 source,
-                image_manifest,
+                member_id=member.member_id,
+                discovered_member=member,
                 load_images=load_images,
                 load_analysis_csv=load_analysis_csv,
             )
@@ -503,6 +492,20 @@ def _resolve_metadata(metadata: NwbMetadata | None) -> NwbMetadata:
         raise ValueError("identifier must be a nonempty string when supplied")
     if value.subject is not None:
         _validate_subject(value.subject)
+    for field_name, field_value in (
+        ("experiment_description", value.experiment_description),
+        ("institution", value.institution),
+    ):
+        if field_value is not None and not field_value.strip():
+            raise ValueError(f"{field_name} must be nonempty when supplied")
+    for field_name, field_value in (
+        ("experimenter", value.experimenter),
+        ("keywords", value.keywords),
+    ):
+        if field_value is not None and (
+            not field_value or any(not item.strip() for item in field_value)
+        ):
+            raise ValueError(f"{field_name} must contain nonempty strings")
 
     return NwbMetadata(
         session_description=value.session_description,
@@ -510,6 +513,10 @@ def _resolve_metadata(metadata: NwbMetadata | None) -> NwbMetadata:
         session_start_time=session_start_time,
         session_id=value.session_id,
         subject=value.subject,
+        experimenter=value.experimenter,
+        experiment_description=value.experiment_description,
+        institution=value.institution,
+        keywords=value.keywords,
     )
 
 
@@ -572,6 +579,14 @@ def _build_nwbfile(metadata: NwbMetadata, api: _NwbApi) -> Any:
         kwargs["session_id"] = metadata.session_id
     if subject is not None:
         kwargs["subject"] = subject
+    if metadata.experimenter is not None:
+        kwargs["experimenter"] = list(metadata.experimenter)
+    if metadata.experiment_description is not None:
+        kwargs["experiment_description"] = metadata.experiment_description
+    if metadata.institution is not None:
+        kwargs["institution"] = metadata.institution
+    if metadata.keywords is not None:
+        kwargs["keywords"] = list(metadata.keywords)
     return api.NWBFile(**kwargs)
 
 
@@ -689,6 +704,16 @@ def _add_acq_image_to_nwbfile(
                 table_description=(
                     f"AcqStore {analysis_name} analysis results for {image_id}."
                 ),
+                columns=[
+                    {
+                        "name": column_name,
+                        "description": _analysis_column_description(
+                            column_name,
+                            analysis_name=analysis_name,
+                        ),
+                    }
+                    for column_name in table_dataframe.columns
+                ],
             )
         )
 
@@ -706,10 +731,39 @@ def _add_acq_image_to_nwbfile(
     }
 
 
+def _analysis_column_description(column_name: str, *, analysis_name: str) -> str:
+    """Return a meaningful NWB description for an AcqStore result column.
+
+    Args:
+        column_name: DataFrame column being exported.
+        analysis_name: AcqStore analysis that owns the table.
+
+    Returns:
+        Human-readable, non-placeholder description.
+    """
+    descriptions = {
+        "channel": "Zero-based AcqStore image channel index.",
+        "roi_id": "AcqStore region-of-interest identifier.",
+        "time_index": "Zero-based sample index along the analysis time axis.",
+        "time_s": "Elapsed time from acquisition start, in seconds.",
+        "time_sec": "Elapsed time from acquisition start, in seconds.",
+        "velocity": "Estimated signed velocity in the analysis output units.",
+        "radon_velocity": "Radon-transform velocity estimate in the analysis output units.",
+        "theta_deg": "Estimated Radon-transform angle, in degrees.",
+        "diameter_um": "Estimated vessel diameter, in micrometers.",
+        "diameter_um_filt": "Filtered vessel-diameter estimate, in micrometers.",
+    }
+    return descriptions.get(
+        column_name,
+        f"AcqStore {analysis_name} analysis result value named {column_name!r}.",
+    )
+
+
 def _build_lazy_acq_image(
     source: Path,
-    manifest: dict[str, object],
+    member_id: str | None,
     *,
+    discovered_member: NwbImageMember | None = None,
     load_images: bool,
     load_analysis_csv: bool,
 ) -> AcqImage:
@@ -717,7 +771,8 @@ def _build_lazy_acq_image(
 
     Args:
         source: Physical local NWB path.
-        manifest: Validated per-member AcqStore manifest.
+        member_id: Exact logical member, or ``None`` when exactly one is required.
+        discovered_member: Optional descriptor from a shared discovery pass.
         load_images: Whether to materialize pixels before returning.
         load_analysis_csv: Whether to materialize DynamicTables before returning.
 
@@ -725,39 +780,21 @@ def _build_lazy_acq_image(
         NWB-backed AcqImage with a unique logical file identifier.
 
     Raises:
-        ValueError: If required manifest/header fields are malformed.
+        ValueError: If member discovery or selection fails.
     """
     from acqstore.acq_image.acq_image import AcqImage
 
-    member_id = _require_nonempty_str(manifest, "id")
-    display_name = _require_nonempty_str(manifest, "display_name")
-    axes = _validate_image_axes(manifest)
-    channel_names = _require_string_list(manifest, "channel_images")
-    images_container = _require_nonempty_str(manifest, "images_container")
-    sidecar_payload = manifest.get("sidecar_payload")
-    if not isinstance(sidecar_payload, dict):
-        raise ValueError(f"NWB member {member_id!r} is missing AcqImage sidecar JSON")
-    analysis_tables_raw = manifest.get("analysis_tables", {})
-    if not isinstance(analysis_tables_raw, dict) or not all(
-        isinstance(key, str) and isinstance(value, str)
-        for key, value in analysis_tables_raw.items()
-    ):
-        raise ValueError(f"NWB member {member_id!r} has invalid analysis_tables mapping")
-
-    header = _header_from_manifest(source, manifest, axes, sidecar_payload)
-    loader = NwbFileLoader(
-        str(source),
-        member_id=member_id,
-        images_container=images_container,
-        channel_images=tuple(channel_names),
-        axes=axes,
-        header=header,
+    loader = (
+        NwbFileLoader.from_member(source, discovered_member)
+        if discovered_member is not None
+        else NwbFileLoader(str(source), member_id=member_id)
     )
+    member = loader.member
     persistence = NwbPersistence(
         nwb_path=str(source),
-        member_id=member_id,
-        sidecar_payload=sidecar_payload,
-        analysis_tables=dict(analysis_tables_raw),
+        member_id=member.member_id,
+        sidecar_payload=member.sidecar_payload,
+        analysis_tables=dict(member.analysis_tables),
     )
 
     instance = AcqImage.__new__(AcqImage)
@@ -769,200 +806,7 @@ def _build_lazy_acq_image(
         load_persisted_state=True,
         is_memory_backed=False,
         persistence_backend=persistence,
-        file_id=f"{source}#{member_id}",
-        display_name=display_name,
+        file_id=f"{source}#{member.member_id}",
+        display_name=member.display_name,
     )
     return instance
-
-
-def _header_from_manifest(
-    source: Path,
-    manifest: dict[str, object],
-    axes: tuple[str, ...],
-    sidecar_payload: dict[str, object],
-) -> ImageHeader:
-    """Build a metadata-only ImageHeader for one NWB member.
-
-    Args:
-        source: Physical NWB path.
-        manifest: Per-member AcqStore manifest.
-        axes: Validated AcqStore axes.
-        sidecar_payload: Embedded existing AcqImage sidecar JSON.
-
-    Returns:
-        ImageHeader sufficient for AcqImage construction without reading pixels.
-
-    Raises:
-        ValueError: If shape, dtype, or sidecar header metadata is malformed.
-    """
-    raw_shape = manifest.get("shape")
-    if not isinstance(raw_shape, list) or len(raw_shape) != len(axes):
-        raise ValueError("AcqStore NWB member shape does not match its axes")
-    try:
-        shape = tuple(int(value) for value in raw_shape)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("AcqStore NWB member shape must contain integers") from exc
-    if any(value <= 0 for value in shape):
-        raise ValueError("AcqStore NWB member shape values must be positive")
-
-    raw_dtype = manifest.get("dtype")
-    try:
-        dtype = np.dtype(raw_dtype)
-    except TypeError as exc:
-        raise ValueError(f"Invalid AcqStore NWB dtype: {raw_dtype!r}") from exc
-
-    header_payload = sidecar_payload.get("image_header_metadata")
-    if not isinstance(header_payload, dict):
-        raise ValueError("AcqStore NWB sidecar is missing image_header_metadata")
-
-    units, labels = ImageHeader.default_physical_for_dims(axes)
-    units_list = list(units)
-    labels_list = list(labels)
-    for dim, unit_key, label_key in (
-        ("Y", "physical_unit_y", "physical_label_y"),
-        ("X", "physical_unit_x", "physical_label_x"),
-    ):
-        index = axes.index(dim)
-        units_list[index] = float(header_payload[unit_key])
-        labels_list[index] = str(header_payload[label_key])
-
-    sizes = {dim: int(size) for dim, size in zip(axes, shape, strict=True)}
-    return ImageHeader(
-        path=str(source),
-        shape=shape,
-        dims=axes,
-        sizes=sizes,
-        dtype=dtype,
-        num_channels=int(sizes.get("C", 1)),
-        num_scenes=1,
-        physical_units=tuple(units_list),
-        physical_units_labels=tuple(labels_list),
-        date=str(header_payload.get("date", "")),
-        time=str(header_payload.get("time", "")),
-        file_size="",
-    )
-
-
-def _read_json_scratch(nwbfile: Any, scratch_name: str) -> dict[str, object]:
-    """Read one JSON object stored in NWB scratch.
-
-    Args:
-        nwbfile: Open PyNWB NWBFile.
-        scratch_name: Scratch object name.
-
-    Returns:
-        Parsed JSON dictionary.
-
-    Raises:
-        ValueError: If the scratch object is missing or invalid.
-    """
-    scratch = nwbfile.scratch.get(scratch_name)
-    if scratch is None:
-        raise ValueError(f"NWB file does not contain AcqStore scratch {scratch_name!r}")
-    raw = scratch.data
-    if hasattr(raw, "shape") and getattr(raw, "shape", None) == () and hasattr(raw, "__getitem__"):
-        raw = raw[()]
-    if isinstance(raw, np.ndarray) and raw.shape == ():
-        raw = raw.item()
-    if isinstance(raw, bytes):
-        raw = raw.decode("utf-8")
-    if not isinstance(raw, str):
-        raise ValueError(f"AcqStore NWB scratch {scratch_name!r} is not a JSON string")
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"AcqStore NWB scratch {scratch_name!r} contains invalid JSON") from exc
-    if not isinstance(parsed, dict):
-        raise ValueError(f"AcqStore NWB scratch {scratch_name!r} must contain a JSON object")
-    return parsed
-
-
-def _validate_root_manifest(
-    manifest: dict[str, object],
-    *,
-    expected_version: int,
-    expected_kind: str,
-) -> None:
-    """Validate common AcqStore NWB root-manifest fields.
-
-    Args:
-        manifest: Parsed root manifest.
-        expected_version: Required format version.
-        expected_kind: Required logical object kind.
-
-    Returns:
-        None.
-
-    Raises:
-        ValueError: If format, version, or kind is unsupported.
-    """
-    if manifest.get("format") != _ACQSTORE_NWB_FORMAT:
-        raise ValueError("NWB file is not an AcqStore NWB file")
-    if manifest.get("version") != expected_version:
-        raise ValueError(
-            f"Unsupported AcqStore NWB version {manifest.get('version')!r}; "
-            f"expected {expected_version}"
-        )
-    if manifest.get("kind") != expected_kind:
-        raise ValueError(
-            f"AcqStore NWB kind is {manifest.get('kind')!r}; expected {expected_kind!r}"
-        )
-
-
-def _validate_image_axes(manifest: dict[str, object]) -> tuple[str, ...]:
-    """Return supported AcqStore axes from one member manifest.
-
-    Args:
-        manifest: Per-member AcqStore manifest.
-
-    Returns:
-        Axis tuple, exactly ``YX`` or ``CYX``.
-
-    Raises:
-        ValueError: If axes are missing or unsupported.
-    """
-    raw_axes = manifest.get("axes")
-    if not isinstance(raw_axes, list) or not all(isinstance(axis, str) for axis in raw_axes):
-        raise ValueError("AcqStore NWB image axes must be a list of strings")
-    axes = tuple(axis.upper() for axis in raw_axes)
-    if axes not in _SUPPORTED_AXES:
-        raise ValueError(f"AcqStore NWB does not support axes={axes!r}")
-    return axes
-
-
-def _require_nonempty_str(manifest: dict[str, object], key: str) -> str:
-    """Return one required nonempty string manifest field.
-
-    Args:
-        manifest: Manifest dictionary.
-        key: Field name.
-
-    Returns:
-        Nonempty string value.
-
-    Raises:
-        ValueError: If the value is absent, non-string, or empty.
-    """
-    value = manifest.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"AcqStore NWB member field {key!r} must be a nonempty string")
-    return value
-
-
-def _require_string_list(manifest: dict[str, object], key: str) -> list[str]:
-    """Return one required list-of-strings manifest field.
-
-    Args:
-        manifest: Manifest dictionary.
-        key: Field name.
-
-    Returns:
-        List of string values.
-
-    Raises:
-        ValueError: If the value is not a nonempty list of strings.
-    """
-    value = manifest.get(key)
-    if not isinstance(value, list) or not value or not all(isinstance(item, str) for item in value):
-        raise ValueError(f"AcqStore NWB member field {key!r} must be a nonempty string list")
-    return value

@@ -242,12 +242,18 @@ class AcqImage:
         else:
             self.path = str(Path(path).expanduser().resolve(strict=False))
 
+        images = create_file_loader(self.path)
+        from .file_loaders.nwb_file_loader import NwbFileLoader
+
+        is_nwb = isinstance(images, NwbFileLoader)
         self._initialize(
-            images=create_file_loader(self.path),
+            images=images,
             load_images=load_images,
             load_analysis_csv=load_analysis_csv,
             load_persisted_state=True,
             is_memory_backed=False,
+            file_id=f"{self.path}#{images.member_id}" if is_nwb else None,
+            display_name=images.member.display_name if is_nwb else None,
         )
 
     @classmethod
@@ -384,6 +390,7 @@ class AcqImage:
         self._persistence_backend = persistence_backend or create_persistence_backend(
             self.path,
             is_memory_backed=is_memory_backed,
+            file_loader=images,
         )
         self._images = images
         # ``_images`` is the source-file loader and owns header/reference access.
