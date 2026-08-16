@@ -190,7 +190,7 @@ def main_2():
 
     acq_image_2 = AcqImage(save_path)
 
-    acq_image_2 = AcqImage.from_nwb(save_path)
+    # acq_image_2 = AcqImage.from_nwb(save_path)
     pixels = acq_image_2.pixels
     print(f'pixels.shape: {pixels.shape}')
 

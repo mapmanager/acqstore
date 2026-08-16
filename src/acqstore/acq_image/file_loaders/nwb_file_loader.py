@@ -16,6 +16,8 @@ from typing import Any
 
 import numpy as np
 
+from acqstore.nwb_source import NwbSource
+
 from .base_file_loader import BaseFileLoader, ImageHeader, format_file_size
 
 ACQSTORE_NWB_FORMAT = "acqstore-nwb"
@@ -74,7 +76,9 @@ def _require_nwb_loader_api() -> _NwbLoaderApi:
     )
 
 
-def inspect_nwb_image_members(path: str | Path) -> tuple[NwbImageMember, ...]:
+def inspect_nwb_image_members(
+    path: str | Path | NwbSource,
+) -> tuple[NwbImageMember, ...]:
     """Inspect supported static image members without loading their pixels.
 
     AcqStore manifests explicitly define channel grouping and round-trip state.
@@ -83,7 +87,7 @@ def inspect_nwb_image_members(path: str | Path) -> tuple[NwbImageMember, ...]:
     ``Images`` collection.
 
     Args:
-        path: Local HDF5-backed NWB file.
+        path: Local path or supported read-only remote NWB source.
 
     Returns:
         Supported logical image members in stable order.
@@ -93,9 +97,9 @@ def inspect_nwb_image_members(path: str | Path) -> tuple[NwbImageMember, ...]:
         ImportError: If optional NWB dependencies are unavailable.
         ValueError: If native metadata is malformed or contradicts datasets.
     """
-    source = Path(path).expanduser().resolve(strict=True)
+    source = NwbSource.from_value(path)
     api = _require_nwb_loader_api()
-    with api.NWBHDF5IO(path=source, mode="r", load_namespaces=True) as io:
+    with source.open_nwb(api.NWBHDF5IO) as io:
         nwbfile = io.read()
         native_entries = _read_native_manifest_entries(nwbfile)
         if native_entries is not None:
@@ -177,7 +181,7 @@ def _validate_manifest_root(
 
 
 def _native_member_from_manifest(
-    source: Path,
+    source: NwbSource,
     nwbfile: Any,
     manifest: dict[str, object],
     api: _NwbLoaderApi,
@@ -250,7 +254,7 @@ def _native_member_from_manifest(
 
 
 def _discover_stock_members(
-    source: Path,
+    source: NwbSource,
     nwbfile: Any,
     api: _NwbLoaderApi,
 ) -> tuple[NwbImageMember, ...]:
@@ -282,7 +286,7 @@ def _discover_stock_members(
 
 
 def _stock_header(
-    source: Path,
+    source: NwbSource,
     nwbfile: Any,
     image: Any,
     shape_xy: tuple[int, int],
@@ -304,7 +308,7 @@ def _stock_header(
     date = session_start.strftime("%Y%m%d") if session_start is not None else ""
     time = session_start.strftime("%H:%M:%S") if session_start is not None else ""
     return ImageHeader(
-        path=str(source),
+        path=source.identity,
         shape=shape_yx,
         dims=("Y", "X"),
         sizes={"Y": shape_yx[0], "X": shape_yx[1]},
@@ -315,12 +319,12 @@ def _stock_header(
         physical_units_labels=labels,
         date=date,
         time=time,
-        file_size=format_file_size(source),
+        file_size=_source_file_size(source),
     )
 
 
 def _native_header(
-    source: Path,
+    source: NwbSource,
     manifest: dict[str, object],
     axes: tuple[str, ...],
     dtype: np.dtype[Any],
@@ -342,7 +346,7 @@ def _native_header(
         units_list[index] = float(header_payload[unit_key])
         labels_list[index] = str(header_payload[label_key])
     return ImageHeader(
-        path=str(source),
+        path=source.identity,
         shape=shape,
         dims=axes,
         sizes=dict(zip(axes, shape, strict=True)),
@@ -353,7 +357,7 @@ def _native_header(
         physical_units_labels=tuple(labels_list),
         date=str(header_payload.get("date", "")),
         time=str(header_payload.get("time", "")),
-        file_size=format_file_size(source),
+        file_size=_source_file_size(source),
     )
 
 
@@ -414,12 +418,24 @@ def _required_string_list(
     return tuple(value)
 
 
-class NwbFileLoader(BaseFileLoader):
-    """Lazy pixel loader for one supported logical image in a local NWB file."""
+def _source_file_size(source: NwbSource) -> str:
+    """Return a display size only when the NWB source is a local file."""
+    local_path = source.local_path
+    return format_file_size(local_path) if local_path is not None else ""
 
-    def __init__(self, path: str, *, member_id: str | None = None) -> None:
+
+class NwbFileLoader(BaseFileLoader):
+    """Lazy pixel loader for one logical image in a local or remote NWB file."""
+
+    def __init__(
+        self,
+        path: str | Path | NwbSource,
+        *,
+        member_id: str | None = None,
+    ) -> None:
         """Inspect metadata, resolve one member, and leave pixels unloaded."""
-        members = inspect_nwb_image_members(path)
+        source = NwbSource.from_value(path)
+        members = inspect_nwb_image_members(source)
         if member_id is None:
             if not members:
                 raise ValueError(
@@ -450,13 +466,13 @@ class NwbFileLoader(BaseFileLoader):
         self.images_container = selected.images_container
         self.channel_images = selected.channel_images
         self.axes = selected.axes
-        resolved = str(Path(path).expanduser().resolve(strict=True))
-        super().__init__(resolved, header=selected.header)
+        self.source = source
+        super().__init__(source.identity, header=selected.header)
 
     @classmethod
     def from_member(
         cls,
-        path: str | Path,
+        path: str | Path | NwbSource,
         member: NwbImageMember,
     ) -> NwbFileLoader:
         """Construct a loader from a member returned by one discovery pass.
@@ -471,8 +487,8 @@ class NwbFileLoader(BaseFileLoader):
         Raises:
             ValueError: If the member header belongs to another physical file.
         """
-        resolved = str(Path(path).expanduser().resolve(strict=True))
-        if str(Path(member.header.path).resolve(strict=False)) != resolved:
+        source = NwbSource.from_value(path)
+        if member.header.path != source.identity:
             raise ValueError("NWB member descriptor belongs to a different file")
         instance = cls.__new__(cls)
         instance.member = member
@@ -480,7 +496,8 @@ class NwbFileLoader(BaseFileLoader):
         instance.images_container = member.images_container
         instance.channel_images = member.channel_images
         instance.axes = member.axes
-        BaseFileLoader.__init__(instance, resolved, header=member.header)
+        instance.source = source
+        BaseFileLoader.__init__(instance, source.identity, header=member.header)
         return instance
 
     def read_header(self) -> ImageHeader:
@@ -491,7 +508,7 @@ class NwbFileLoader(BaseFileLoader):
         """Materialize only the selected member in AcqStore axis order."""
         api = _require_nwb_loader_api()
         channels: list[np.ndarray] = []
-        with api.NWBHDF5IO(path=self.path, mode="r", load_namespaces=True) as io:
+        with self.source.open_nwb(api.NWBHDF5IO) as io:
             nwbfile = io.read()
             images = nwbfile.acquisition.get(self.images_container)
             if not isinstance(images, api.Images):

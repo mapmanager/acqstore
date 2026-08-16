@@ -39,6 +39,7 @@ from acqstore.acq_image.file_loaders.nwb_file_loader import (
     inspect_nwb_image_members,
 )
 from acqstore.acq_image.persistence import NwbPersistence
+from acqstore.nwb_source import NwbSource
 
 from acqstore.utils.logging import get_logger
 logger = get_logger(__name__)
@@ -234,18 +235,21 @@ def save_nwb(
 
 
 def load_nwb(
-    nwb_file: str | Path,
+    nwb_file: str | Path | NwbSource,
     *,
     load_images: bool = False,
     load_analysis_csv: bool = False,
+    remote_cache_dir: str | Path | None = None,
 ) -> AcqImage:
     """Import exactly one supported stock or AcqStore NWB image.
 
     Args:
-        nwb_file: Local NWB file previously created by :func:`save_nwb`.
+        nwb_file: Local path or supported read-only remote NWB source.
         load_images: Whether to materialize primary pixels before returning.
         load_analysis_csv: Whether to materialize analysis DynamicTables as
             DataFrames before returning.
+        remote_cache_dir: Optional persistent byte-range cache directory for a
+            remote source. Invalid for local paths or an existing ``NwbSource``.
 
     Returns:
         AcqImage whose pixels and analysis result tables are lazy by default.
@@ -255,7 +259,7 @@ def load_nwb(
         ImportError: If optional NWB dependencies are not installed.
         ValueError: If the file has zero or multiple supported logical images.
     """
-    source = Path(nwb_file).expanduser().resolve(strict=True)
+    source = NwbSource.from_value(nwb_file, cache_dir=remote_cache_dir)
     return _build_lazy_acq_image(
         source,
         member_id=None,
@@ -364,10 +368,11 @@ def save_nwb_collection(
 
 
 def load_nwb_collection(
-    nwb_file: str | Path,
+    nwb_file: str | Path | NwbSource,
     *,
     load_images: bool = False,
     load_analysis_csv: bool = False,
+    remote_cache_dir: str | Path | None = None,
 ) -> AcqImageList:
     """Import all supported stock or AcqStore NWB images as a lazy list.
 
@@ -377,11 +382,13 @@ def load_nwb_collection(
     loaded later through the normal AcqImage lazy-loading API.
 
     Args:
-        nwb_file: Local NWB file created by :func:`save_nwb_collection`.
+        nwb_file: Local path or supported read-only remote NWB source.
         load_images: Whether to materialize every member's primary pixels before
             returning. Defaults to false.
         load_analysis_csv: Whether to materialize every member's analysis tables
             before returning. Defaults to false.
+        remote_cache_dir: Optional persistent byte-range cache directory for a
+            remote source. Invalid for local paths or an existing ``NwbSource``.
 
     Returns:
         AcqImageList preserving stored member order and unique logical IDs.
@@ -393,7 +400,7 @@ def load_nwb_collection(
     """
     from acqstore.acq_image.acq_image_list import AcqImageList
 
-    source = Path(nwb_file).expanduser().resolve(strict=True)
+    source = NwbSource.from_value(nwb_file, cache_dir=remote_cache_dir)
     members = inspect_nwb_image_members(source)
     if not members:
         raise ValueError(
@@ -416,8 +423,12 @@ def load_nwb_collection(
     # Reuse the established in-memory list construction pattern without treating
     # the shared NWB path as 500 independent filesystem files.
     collection = AcqImageList.__new__(AcqImageList)
-    collection.path = str(source)
-    collection.source_root_path = str(source.parent)
+    collection.path = source.identity
+    collection.source_root_path = (
+        str(source.local_path.parent)
+        if source.local_path is not None
+        else source.identity
+    )
     collection.file_list = [image.file_id for image in images]
     collection._files = images
     collection._files_by_id = {image.file_id: image for image in images}
@@ -760,7 +771,7 @@ def _analysis_column_description(column_name: str, *, analysis_name: str) -> str
 
 
 def _build_lazy_acq_image(
-    source: Path,
+    source: NwbSource,
     member_id: str | None,
     *,
     discovered_member: NwbImageMember | None = None,
@@ -770,7 +781,7 @@ def _build_lazy_acq_image(
     """Build one NWB-backed AcqImage without eagerly reading large datasets.
 
     Args:
-        source: Physical local NWB path.
+        source: Normalized local or remote NWB source.
         member_id: Exact logical member, or ``None`` when exactly one is required.
         discovered_member: Optional descriptor from a shared discovery pass.
         load_images: Whether to materialize pixels before returning.
@@ -787,18 +798,18 @@ def _build_lazy_acq_image(
     loader = (
         NwbFileLoader.from_member(source, discovered_member)
         if discovered_member is not None
-        else NwbFileLoader(str(source), member_id=member_id)
+        else NwbFileLoader(source, member_id=member_id)
     )
     member = loader.member
     persistence = NwbPersistence(
-        nwb_path=str(source),
+        nwb_source=source,
         member_id=member.member_id,
         sidecar_payload=member.sidecar_payload,
         analysis_tables=dict(member.analysis_tables),
     )
 
     instance = AcqImage.__new__(AcqImage)
-    instance.path = str(source)
+    instance.path = source.identity
     instance._initialize(
         images=loader,
         load_images=load_images,
@@ -806,7 +817,7 @@ def _build_lazy_acq_image(
         load_persisted_state=True,
         is_memory_backed=False,
         persistence_backend=persistence,
-        file_id=f"{source}#{member.member_id}",
+        file_id=f"{source.identity}#{member.member_id}",
         display_name=member.display_name,
     )
     return instance

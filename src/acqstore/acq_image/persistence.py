@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from acqstore.nwb_source import NwbSource
+
 if TYPE_CHECKING:
     from acqstore.acq_image.acq_analysis_set import AcqAnalysisSet
     from acqstore.acq_image.acq_image import AcqImage
@@ -134,7 +136,7 @@ class NwbPersistence(AcqPersistenceBackend):
     :func:`acqstore.nwb_io.save_nwb_collection` rather than writing in place.
 
     Args:
-        nwb_path: Physical local NWB file path.
+        nwb_source: Normalized local or remote NWB source.
         member_id: Logical AcqStore member identifier within the NWB file.
         sidecar_payload: Optional AcqImage JSON payload embedded in an AcqStore
             manifest. Stock NWB members have no payload.
@@ -142,7 +144,7 @@ class NwbPersistence(AcqPersistenceBackend):
             name for this member.
     """
 
-    nwb_path: str
+    nwb_source: NwbSource
     member_id: str
     sidecar_payload: dict[str, object] | None
     analysis_tables: dict[str, str]
@@ -168,7 +170,7 @@ class NwbPersistence(AcqPersistenceBackend):
         if self.sidecar_payload is not None:
             acq_image._load_sidecar_payload(
                 self.sidecar_payload,
-                source=f"{self.nwb_path}#{self.member_id}",
+                source=f"{self.nwb_source.identity}#{self.member_id}",
             )
 
     def load_analysis_tables(self, analysis_set: AcqAnalysisSet) -> None:
@@ -190,7 +192,7 @@ class NwbPersistence(AcqPersistenceBackend):
         # Keep the file open only while converting the requested tables. No HDF5
         # objects escape this method, so unload_analysis_csv() can release all
         # resulting DataFrames normally.
-        with api.NWBHDF5IO(path=self.nwb_path, mode="r", load_namespaces=True) as io:
+        with self.nwb_source.open_nwb(api.NWBHDF5IO) as io:
             nwbfile = io.read()
             for analysis_name, table_name in self.analysis_tables.items():
                 table = nwbfile.analysis.get(table_name)
@@ -257,7 +259,7 @@ def create_persistence_backend(
     if isinstance(file_loader, NwbFileLoader):
         member = file_loader.member
         return NwbPersistence(
-            nwb_path=path,
+            nwb_source=file_loader.source,
             member_id=member.member_id,
             sidecar_payload=member.sidecar_payload,
             analysis_tables=dict(member.analysis_tables),

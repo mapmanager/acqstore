@@ -495,14 +495,17 @@ class AcqImage:
         *,
         load_images: bool = False,
         load_analysis_csv: bool = False,
+        remote_cache_dir: str | Path | None = None,
     ) -> Self:
-        """Load one AcqStore NWB file through the canonical NWB module API.
+        """Load one local or read-only remote NWB source.
 
         Args:
-            path: Local AcqStore NWB path.
+            path: Local NWB path, public HTTPS URL, or supported ``dandi://`` URI.
             load_images: Whether to materialize primary pixels before returning.
             load_analysis_csv: Whether to materialize analysis tables before
                 returning.
+            remote_cache_dir: Optional persistent byte-range cache directory for
+                remote reads.
 
         Returns:
             NWB-backed AcqImage, lazy by default.
@@ -513,6 +516,7 @@ class AcqImage:
             path,
             load_images=load_images,
             load_analysis_csv=load_analysis_csv,
+            remote_cache_dir=remote_cache_dir,
         )
 
     def save_as_nwb(

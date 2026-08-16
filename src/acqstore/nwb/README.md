@@ -1,6 +1,6 @@
 # AcqStore NWB import/export
 
-This folder documents AcqStore's optional local NWB support. The implementation
+This folder documents AcqStore's optional local and read-only remote NWB support. The implementation
 lives in `src/acqstore/nwb_io.py`; NWB-specific pixel loading lives in
 `src/acqstore/acq_image/file_loaders/nwb_file_loader.py`.
 
@@ -30,8 +30,10 @@ raises an ambiguity error otherwise. Use `load_nwb_collection(path)` for all
 supported images. AcqStore-authored manifests explicitly define channel grouping,
 so native `CYX` exports reconstruct as one logical AcqImage.
 
-NWB import/export is separate from DANDI. DANDI upload/download is intentionally
-not implemented here yet. Before DANDI publication work, re-evaluate whether the
+AcqStore can stream public NWB assets from direct HTTPS URLs and resolve public
+production `dandi://` identifiers anonymously. DANDI upload, full-Dandiset
+download, and authenticated/embargoed access remain outside this loader. Before
+further DANDI publication work, re-evaluate whether the
 reusable AcqStore JSON should remain in NWB scratch or move to a small NWB
 extension/LabMetaData representation; current NWB guidance treats scratch as
 non-standard exploratory storage even though PyNWB validates it.
@@ -55,6 +57,15 @@ uv run --extra nwb python scripts/nwb/your_script.py
 
 Calling an NWB API without the optional dependency installed raises an
 `ImportError` with the installation command.
+
+For read-only HTTP/DANDI streaming, install the separate remote extra:
+
+```bash
+uv sync --extra nwb-remote
+```
+
+This includes local NWB support and `remfile`. It does not install the DANDI
+client and does not require a DANDI API key for public assets.
 
 ## Canonical module API
 
@@ -82,6 +93,41 @@ from acqstore.nwb_io import load_nwb_collection, save_nwb_collection
 images = load_nwb_collection("dataset.nwb")
 save_nwb_collection(images, "copy.nwb")
 ```
+
+Public remote API:
+
+```python
+from acqstore.nwb_io import load_nwb
+
+image = load_nwb(
+    "dandi://DANDI/001947@draft/sub-A98/sub-A98.nwb"
+)
+image.load_images()
+image.load_analysis_csv()
+```
+
+Persistent range caching is opt-in:
+
+```python
+image = load_nwb(
+    "dandi://DANDI/001947@draft/sub-A98/sub-A98.nwb",
+    remote_cache_dir="~/.cache/acqstore/nwb",
+)
+```
+
+Without `remote_cache_dir`, `remfile` maintains only its bounded in-process
+cache. AcqStore never creates a persistent cache directory implicitly.
+
+Direct public HTTPS content URLs are also accepted. Remote sources are
+read-only. Metadata inspection, pixel loading, and analysis-table loading each
+open and close their own remote HDF5 session; no network/HDF5 handle is retained
+for the lifetime of an `AcqImage`. URL query strings are used for access but are
+excluded from logical identifiers and display paths.
+
+The public DANDI resolver supports only production identifiers of the form
+`dandi://DANDI/<six-digit-id>@<version>/<asset-path>`. It makes anonymous API
+requests. Private or embargoed assets fail clearly; AcqStore does not inspect
+`DANDI_API_KEY` in this implementation.
 
 NWB import is lazy by default:
 
@@ -185,6 +231,13 @@ Run NWB-specific tests with the optional dependency enabled:
 
 ```bash
 uv run --extra nwb pytest tests/acqstore/nwb/ -v
+```
+
+Remote tests and the hard-coded public demonstration use:
+
+```bash
+uv run --extra nwb-remote pytest tests/acqstore/nwb/ -v
+uv run --extra nwb-remote python scripts/nwb/try_nwb_remote.py
 ```
 
 Regenerate the lock file after changing the optional dependency declaration:
