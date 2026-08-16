@@ -366,12 +366,24 @@ class AcqImageList:
         candidate_paths: list[str] = []
         if kind == PathKind.FOLDER:
             if not path_obj.exists() or not path_obj.is_dir():
-                warnings.append(LoadWarning(message='Folder does not exist or is not a directory', path=base_path, error_type=LoadErrorType.MISSING_FILE))
+                warnings.append(
+                    LoadWarning(
+                        message='Folder does not exist or is not a directory',
+                        path=base_path,
+                        error_type=LoadErrorType.MISSING_FILE,
+                    )
+                )
             else:
                 candidate_paths = _build_file_list(path_obj, get_allowed_import_extensions(), folder_depth=folder_depth)
         elif kind == PathKind.FILE:
             if not path_obj.exists() or not (path_obj.is_file() or path_has_allowed_import_extension(path_obj)):
-                warnings.append(LoadWarning(message='File does not exist or is not a supported file/store', path=base_path, error_type=LoadErrorType.MISSING_FILE))
+                warnings.append(
+                    LoadWarning(
+                        message='File does not exist or is not a supported file/store',
+                        path=base_path,
+                        error_type=LoadErrorType.MISSING_FILE,
+                    )
+                )
             else:
                 candidate_paths = [str(path_obj.resolve())]
         elif kind == PathKind.CSV:
@@ -383,13 +395,25 @@ class AcqImageList:
 
         files: list[AcqImage] = []
         total = len(candidate_paths)
+        logical_discovered_count = 0
         if progress_callback is not None:
             progress_callback(0, total, f'Discovered {total} file(s)')
-        for candidate in candidate_paths:
+        for candidate_index, candidate in enumerate(candidate_paths, start=1):
             if should_cancel is not None and should_cancel():
                 raise LoadCancelled('Load cancelled')
             try:
-                if file_factory is None:
+                if file_factory is None and Path(candidate).suffix.casefold() == '.nwb':
+                    nested = cls.from_nwb(
+                        candidate,
+                        load_images=load_images,
+                        load_analysis_csv=load_analysis_csv,
+                    )
+                    if should_cancel is not None and should_cancel():
+                        raise LoadCancelled('Load cancelled')
+                    nested_files = list(nested.get_files())
+                    files.extend(nested_files)
+                    logical_discovered_count += len(nested_files)
+                elif file_factory is None:
                     from acqstore.acq_image.acq_image import AcqImage
 
                     built = AcqImage(
@@ -397,16 +421,33 @@ class AcqImageList:
                         load_images=load_images,
                         load_analysis_csv=load_analysis_csv,
                     )
+                    logical_discovered_count += 1
+                    files.append(built)
                 else:
                     built = file_factory(candidate)
-                files.append(built)
+                    logical_discovered_count += 1
+                    files.append(built)
+            except LoadCancelled:
+                raise
             except Exception as exc:
+                logical_discovered_count += 1
                 resolved_candidate = str(Path(candidate).resolve(strict=False))
                 message = f'Failed to load file: {exc}'
                 logger.error('%s: %s', message, resolved_candidate)
-                warnings.append(LoadWarning(message=message, path=resolved_candidate, error_type=LoadErrorType.LOADER_ERROR, resolved_path=resolved_candidate))
+                warnings.append(
+                    LoadWarning(
+                        message=message,
+                        path=resolved_candidate,
+                        error_type=LoadErrorType.LOADER_ERROR,
+                        resolved_path=resolved_candidate,
+                    )
+                )
             if progress_callback is not None:
-                progress_callback(len(files), total, f'Loaded {len(files)}/{total}')
+                progress_callback(
+                    candidate_index,
+                    total,
+                    f'Processed {candidate_index}/{total} source(s); loaded {len(files)} image(s)',
+                )
 
         obj = cls.__new__(cls)
         obj.path = base_path
@@ -419,11 +460,15 @@ class AcqImageList:
             obj.source_root_path = str(path_obj.resolve(strict=False).parent)
         else:
             obj.source_root_path = None
-        obj.file_list = [str(Path(file.path).resolve(strict=False)) if hasattr(file, 'path') else file.file_id for file in files]
+        obj.file_list = [file.file_id for file in files]
         obj._files = files
         obj._files_by_id = {acq_file.file_id: acq_file for acq_file in files}
         obj._attach_analysis_pools()
-        return LoadResult(acq_image_list=obj, warnings=tuple(warnings), discovered_count=total)
+        return LoadResult(
+            acq_image_list=obj,
+            warnings=tuple(warnings),
+            discovered_count=logical_discovered_count,
+        )
 
     @classmethod
     def from_manifest_csv(
