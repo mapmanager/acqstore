@@ -30,7 +30,7 @@ from acqstore.acq_image.supported_import_extensions import path_has_allowed_impo
 # Edit these paths for your machine. SOURCE_PATH may be one OIR/CZI/TIF/OME-Zarr
 # file or a folder containing supported acquisitions plus sidecar JSON/CSV files.
 SOURCE_PATH = Path('/Users/cudmore/Sites/cloudscope-data/demo-velocity/20251030')
-SOURCE_PATH = Path('/Users/cudmore/Sites/cloudscope-data/threed-examples/S7SSC1R3.czi')
+# SOURCE_PATH = Path('/Users/cudmore/Sites/cloudscope-data/threed-examples/S7SSC1R3.czi')
 
 OUTPUT_DIR = Path('/Users/cudmore/Desktop/cloudscope_ome_zarr_try')
 OVERWRITE = True
