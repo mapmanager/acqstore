@@ -28,6 +28,7 @@ from acqstore.acq_image.io.store_utils import (
 _OME_NGFF_VERSION_BY_FORMAT = {2: '0.4', 3: '0.5'}
 _DEFAULT_ZARR_FORMAT = 3
 _MIN_PYRAMID_SPATIAL_SIZE = 16
+_DEFAULT_SPATIAL_CHUNK_SIZE = 256
 _TEMPORAL_UNIT_LABELS = {
     's',
     'sec',
@@ -274,6 +275,50 @@ def build_multiscale_level_shapes(
     return levels
 
 
+def build_ome_zarr_chunk_shapes(
+    level_shapes: list[tuple[int, ...]],
+    axes: tuple[str, ...],
+    *,
+    spatial_chunk_size: int = _DEFAULT_SPATIAL_CHUNK_SIZE,
+) -> list[tuple[int, ...]]:
+    """Return viewport-friendly per-level chunk shapes for OME-Zarr arrays.
+
+    Spatial Y/X axes use tiles no larger than ``spatial_chunk_size``. Other
+    axes use one element per chunk so a viewport read does not unnecessarily
+    fetch adjacent channels, Z planes, or time points.
+
+    Args:
+        level_shapes: Level-zero-first array shapes.
+        axes: Axis labels aligned with every level shape.
+        spatial_chunk_size: Maximum Y/X chunk extent.
+
+    Returns:
+        One chunk shape per pyramid level.
+
+    Raises:
+        ValueError: If no levels are supplied, the spatial size is invalid, or
+            a level rank does not match ``axes``.
+    """
+    if not level_shapes:
+        raise ValueError("level_shapes must not be empty")
+    if spatial_chunk_size < 1:
+        raise ValueError("spatial_chunk_size must be >= 1")
+
+    chunk_shapes: list[tuple[int, ...]] = []
+    for level_shape in level_shapes:
+        if len(level_shape) != len(axes):
+            raise ValueError(
+                f"Level shape {level_shape!r} does not match axes {axes!r}"
+            )
+        chunk_shapes.append(
+            tuple(
+                min(int(size), spatial_chunk_size) if axis in {"Y", "X"} else 1
+                for axis, size in zip(axes, level_shape, strict=True)
+            )
+        )
+    return chunk_shapes
+
+
 def write_acq_pixels_ome_zarr(
     pixels: AcqPixels,
     path: str | Path,
@@ -376,6 +421,7 @@ def _write_acq_pixels_ome_zarr_directory(
     writer_cls = _import_bioio_writer()
     arr = np.asarray(pixels.get_array(0))
     level_shapes = build_multiscale_level_shapes(tuple(int(x) for x in arr.shape), pixels.axes)
+    chunk_shapes = build_ome_zarr_chunk_shapes(level_shapes, pixels.axes)
     axes_units, physical_pixel_size = _ngff_calibration(
         pixels,
         safe_raster_temporal_y=safe_raster_temporal_y,
@@ -383,6 +429,7 @@ def _write_acq_pixels_ome_zarr_directory(
     writer = writer_cls(
         store=str(path),
         level_shapes=level_shapes,
+        chunk_shape=chunk_shapes,
         dtype=arr.dtype,
         zarr_format=zarr_format,
         axes_names=[axis.lower() for axis in pixels.axes],

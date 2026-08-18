@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 import pytest
@@ -13,10 +13,40 @@ from acqstore.acq_image.acq_pixels import AcqPixels
 from acqstore.acq_image.acq_image import AcqImage
 from acqstore.acq_image.io.ome_zarr import (
     _dataset_path_from_attrs,
+    build_ome_zarr_chunk_shapes,
     build_ome_ngff_metadata,
     read_acq_pixels_ome_zarr,
     write_acq_pixels_ome_zarr,
 )
+
+
+@pytest.mark.parametrize(
+    ("axes", "level_shapes", "expected"),
+    [
+        (
+            ("Y", "X"),
+            [(2500, 281), (1250, 140), (625, 70)],
+            [(256, 256), (256, 140), (256, 70)],
+        ),
+        (
+            ("C", "Y", "X"),
+            [(2, 1024, 1024), (2, 512, 512)],
+            [(1, 256, 256), (1, 256, 256)],
+        ),
+        (
+            ("Z", "C", "Y", "X"),
+            [(100, 2, 1024, 1024), (100, 2, 128, 128)],
+            [(1, 1, 256, 256), (1, 1, 128, 128)],
+        ),
+    ],
+)
+def test_axis_aware_chunk_shapes_are_spatially_tiled(
+    axes: tuple[str, ...],
+    level_shapes: list[tuple[int, ...]],
+    expected: list[tuple[int, ...]],
+) -> None:
+    """Chunks tile Y/X while isolating channel, depth, and time axes."""
+    assert build_ome_zarr_chunk_shapes(level_shapes, axes) == expected
 
 
 def test_established_ome_zarr_public_signatures_are_unchanged() -> None:
