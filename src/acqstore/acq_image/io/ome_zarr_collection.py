@@ -11,6 +11,8 @@ import json
 import os
 import tempfile
 import uuid
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
 
 
 COLLECTION_FORMAT = "acqstore-multi-image-ome-zarr"
-COLLECTION_FORMAT_VERSION = 1
+COLLECTION_FORMAT_VERSION = 2
 COLLECTION_ZARR_FORMAT = 3
 
 
@@ -166,19 +168,23 @@ def _build_collection(
     root = zarr.open_group(str(staged), mode="w", zarr_format=COLLECTION_ZARR_FORMAT)
     root.create_group("images")
 
-    image_entries: list[dict[str, str]] = []
+    image_entries: list[dict[str, Any]] = []
     for index, acq_image in enumerate(members):
         image_id = f"image_{index:03d}"
         relative_path = PurePosixPath("images", image_id)
         child = staged.joinpath(*relative_path.parts)
         reference_path = _write_collection_member(acq_image, child, relative_path)
+        source = _source_identity(acq_image, acq_image_list)
         entry = {
             "id": image_id,
+            "name": str(acq_image.name),
+            "source": source,
             "path": relative_path.as_posix(),
             "sidecar": (relative_path / "acqstore" / "acq_image.json").as_posix(),
             "native_manifest": (
                 relative_path / "acqstore" / "manifest.json"
             ).as_posix(),
+            "summary": _image_summary(acq_image),
         }
         if reference_path is not None:
             entry["reference_image"] = reference_path
@@ -197,6 +203,9 @@ def _build_collection(
             "format": COLLECTION_FORMAT,
             "version": COLLECTION_FORMAT_VERSION,
             "zarr_format": COLLECTION_ZARR_FORMAT,
+            "name": _collection_name(acq_image_list, staged),
+            "created_utc": _utc_now_iso(),
+            "acqstore_version": _acqstore_version(),
             "images": image_entries,
             "tables": {
                 "velocity": "acqstore/tables/velocity.csv",
@@ -238,10 +247,114 @@ def _write_collection_member(
             overwrite=False,
             zarr_format=COLLECTION_ZARR_FORMAT,
         )
+        _add_reference_to_child_manifest(child)
         return reference_path.as_posix()
     finally:
         if not reference_was_loaded:
             acq_image.images.unload_reference_data()
+
+
+def _source_identity(
+    acq_image: AcqImage,
+    acq_image_list: AcqImageList,
+) -> dict[str, str | None]:
+    """Return portable source identity without exposing an absolute path.
+
+    Args:
+        acq_image: Exported acquisition image.
+        acq_image_list: Collection that supplied the image.
+
+    Returns:
+        Source filename and optional collection-relative POSIX path.
+    """
+    raw_path = str(acq_image.path)
+    if "://" in raw_path:
+        filename = Path(raw_path.rsplit("/", maxsplit=1)[-1]).name or None
+        return {"filename": filename, "relative_path": None}
+    source_path = Path(raw_path).expanduser()
+    filename = source_path.name or None
+    raw_root = getattr(acq_image_list, "source_root_path", None)
+    if not raw_root:
+        return {"filename": filename, "relative_path": None}
+    try:
+        relative = source_path.resolve(strict=False).relative_to(
+            Path(str(raw_root)).expanduser().resolve(strict=False)
+        )
+    except ValueError:
+        return {"filename": filename, "relative_path": None}
+    return {"filename": filename, "relative_path": relative.as_posix()}
+
+
+def _collection_name(acq_image_list: AcqImageList, staged: Path) -> str:
+    """Return a human-readable collection name.
+
+    Args:
+        acq_image_list: Exported acquisition collection.
+        staged: Staged OME-Zarr destination.
+
+    Returns:
+        Source-root name when available, otherwise the destination name.
+    """
+    raw_root = getattr(acq_image_list, "source_root_path", None)
+    if raw_root:
+        name = Path(str(raw_root)).expanduser().name
+        if name:
+            return name
+    return staged.name
+
+
+def _image_summary(acq_image: AcqImage) -> dict[str, Any]:
+    """Build the denormalized collection row used for lightweight discovery.
+
+    Args:
+        acq_image: Exported acquisition image.
+
+    Returns:
+        Typed JSON-safe index fields for one image.
+    """
+    header = acq_image.images.header.with_coerced_physical_calibration()
+    dims = [str(dim).lower() for dim in header.dims]
+    shape = [int(value) for value in header.shape]
+    analysis_types = sorted(
+        {str(analysis.key.analysis_name) for analysis in acq_image.analysis_set.as_list()}
+    )
+    return {
+        "shape": shape,
+        "dims": dims,
+        "sizes": {dim: shape[index] for index, dim in enumerate(dims)},
+        "dtype": str(header.dtype),
+        "num_channels": int(header.num_channels),
+        "num_rois": int(acq_image.rois.num_rois),
+        "analysis_types": analysis_types,
+        "acquisition": {"date": str(header.date or ""), "time": str(header.time or "")},
+        "accepted": bool(acq_image.get_schema_row()["accept"]),
+        "has_reference_image": bool(acq_image.images.has_reference_image),
+    }
+
+
+def _add_reference_to_child_manifest(child: Path) -> None:
+    """Add the collection-written reference path to a native child manifest.
+
+    Args:
+        child: Child OME-Zarr root.
+    """
+    manifest_path = child / "acqstore" / "manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["reference_image"] = "reference"
+    _write_json(manifest_path, payload)
+
+
+def _acqstore_version() -> str:
+    """Return the installed AcqStore package version."""
+    try:
+        return package_version("acqstore")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _utc_now_iso() -> str:
+    """Return a second-resolution UTC timestamp."""
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _verify_collection(staged: Path, *, expected_count: int) -> None:
@@ -284,7 +397,37 @@ def _verify_collection(staged: Path, *, expected_count: int) -> None:
         seen_paths.add(relative_image_path)
         if not sidecar_path.is_file() or not native_manifest_path.is_file():
             raise ValueError(f"Native AcqStore metadata is missing for {image_id}")
+        source = entry.get("source")
+        if not isinstance(source, dict):
+            raise ValueError(f"Collection source identity is missing for {image_id}")
+        relative_source = source.get("relative_path")
+        if relative_source is not None:
+            relative = PurePosixPath(str(relative_source))
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"Collection source identity is not portable: {relative_source}")
+        summary = entry.get("summary")
+        if not isinstance(summary, dict):
+            raise ValueError(f"Collection summary is missing for {image_id}")
         read_acq_pixels_ome_zarr(image_path, lazy=True)
+        native_manifest = json.loads(native_manifest_path.read_text(encoding="utf-8"))
+        analyses = native_manifest.get("analyses")
+        if not isinstance(analyses, list):
+            raise ValueError(f"Analysis resource index is missing for {image_id}")
+        analysis_ids: set[str] = set()
+        for analysis in analyses:
+            if not isinstance(analysis, dict):
+                raise ValueError(f"Invalid analysis entry for {image_id}")
+            analysis_id = str(analysis.get("id", ""))
+            if not analysis_id or analysis_id in analysis_ids:
+                raise ValueError(f"Duplicate or empty analysis id for {image_id}: {analysis_id!r}")
+            analysis_ids.add(analysis_id)
+            resources = analysis.get("resources")
+            if not isinstance(resources, dict):
+                raise ValueError(f"Analysis resources are missing for {analysis_id}")
+            for resource_name in ("table", "peaks"):
+                resource = resources.get(resource_name)
+                if resource is not None and not _safe_manifest_path(image_path, resource).is_file():
+                    raise ValueError(f"Missing {resource_name} resource for {analysis_id}")
         reference_raw = entry.get("reference_image")
         if reference_raw is not None:
             reference_path = _safe_manifest_path(staged, reference_raw)

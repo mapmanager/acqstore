@@ -119,10 +119,21 @@ class NativeZarrPersistence(AcqPersistenceBackend):
         Returns:
             None.
         """
-        from .io.store_utils import join_store_path
+        from .io.native_analysis_resources import load_native_analysis_resources
+        from .io.store_utils import join_store_path, read_json_file
 
-        analysis_set.load_results_tables_from_directory(
-            join_store_path(self.source_path, "acqstore", "analysis")
+        manifest_path = join_store_path(self.source_path, "acqstore", "manifest.json")
+        manifest = read_json_file(manifest_path)
+        if manifest.get("format") != "acqstore-native-ome-zarr":
+            raise ValueError(f"Invalid native Zarr manifest format: {manifest_path}")
+        if manifest.get("version") != 2:
+            raise ValueError(
+                f"Unsupported native Zarr manifest version {manifest.get('version')!r}; expected 2"
+            )
+        load_native_analysis_resources(
+            analysis_set,
+            self.source_path,
+            manifest.get("analyses"),
         )
 
 

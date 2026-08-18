@@ -613,17 +613,20 @@ class AcqImage:
         Returns:
             None.
         """
+        from .io.native_analysis_resources import write_native_analysis_resources
+
         self.pixels.to_ome_zarr(path, overwrite=overwrite, zarr_format=zarr_format)
         write_json_file(join_store_path(path, 'acqstore', 'acq_image.json'), self._build_sidecar_payload())
-        self._acq_analysis_set.save_results_tables_to_directory(join_store_path(path, 'acqstore', 'analysis'))
+        analyses = write_native_analysis_resources(self._acq_analysis_set, str(path))
         write_json_file(
             join_store_path(path, 'acqstore', 'manifest.json'),
             {
                 'format': 'acqstore-native-ome-zarr',
-                'version': 1,
+                'version': 2,
                 'image_group': '.',
                 'sidecar': 'acqstore/acq_image.json',
                 'zarr_format': int(zarr_format),
+                'analyses': analyses,
             },
         )
 

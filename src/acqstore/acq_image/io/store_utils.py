@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
+import io
 import shutil
 import zipfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 
 def is_s3_path(path: str | Path) -> bool:
@@ -134,6 +134,52 @@ def read_json_file(path: str | Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError(f'Expected JSON object in {path}')
     return raw
+
+
+def write_dataframe_csv(path: str | Path, dataframe: Any) -> None:
+    """Write a pandas DataFrame to a local or S3 store resource.
+
+    Args:
+        path: Destination CSV resource path.
+        dataframe: DataFrame-like object exposing ``to_csv``.
+
+    Raises:
+        ValueError: If asked to mutate an existing ZIP store.
+    """
+    path_text = str(path)
+    if is_s3_path(path_text):
+        fs = _s3_filesystem()
+        fs.makedirs(path_text.rsplit('/', 1)[0], exist_ok=True)
+        with fs.open(path_text, 'w') as file:
+            dataframe.to_csv(file, index=False)
+        return
+    if '.zip/' in path_text.lower():
+        raise ValueError('Writing CSV directly inside an existing ZIP store is not supported')
+    destination = Path(path_text)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    dataframe.to_csv(destination, index=False)
+
+
+def read_dataframe_csv(path: str | Path) -> Any:
+    """Read a pandas DataFrame from a local, S3, or ZIP resource.
+
+    Args:
+        path: Source CSV resource path.
+
+    Returns:
+        Loaded pandas DataFrame.
+    """
+    import pandas as pd
+
+    path_text = str(path)
+    if is_s3_path(path_text):
+        with _s3_filesystem().open(path_text, 'r') as file:
+            return pd.read_csv(file)
+    if '.zip/' in path_text.lower():
+        zip_path, member = split_zip_member_path(path_text)
+        with zipfile.ZipFile(zip_path, 'r') as archive:
+            return pd.read_csv(io.BytesIO(archive.read(member)))
+    return pd.read_csv(Path(path_text))
 
 
 def path_exists(path: str | Path) -> bool:

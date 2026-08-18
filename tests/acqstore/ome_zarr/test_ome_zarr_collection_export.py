@@ -14,6 +14,7 @@ from acqstore.acq_image.acq_image_list import AcqImageList
 from acqstore.acq_image.analysis.velocity_analysis.radon_velocity_analysis import (
     RadonVelocityAnalysis,
 )
+from acqstore.acq_image.analysis.model import AnalysisKey
 from acqstore.acq_image.file_loaders.base_file_loader import ReferenceImage
 from acqstore.acq_image.io.ome_zarr import read_acq_pixels_ome_zarr
 from acqstore.acq_image.io.ome_zarr_collection import (
@@ -96,8 +97,11 @@ def test_exports_heterogeneous_native_images_in_one_zarr_hierarchy(tmp_path: Pat
     assert result == destination.resolve()
     manifest = json.loads((destination / "acqstore" / "manifest.json").read_text())
     assert manifest["format"] == COLLECTION_FORMAT
-    assert manifest["version"] == 1
+    assert manifest["version"] == 2
     assert manifest["zarr_format"] == 3
+    assert manifest["name"] == "dataset.ome.zarr"
+    assert manifest["created_utc"].endswith("Z")
+    assert isinstance(manifest["acqstore_version"], str)
     assert [entry["id"] for entry in manifest["images"]] == [
         "image_000",
         "image_001",
@@ -106,6 +110,21 @@ def test_exports_heterogeneous_native_images_in_one_zarr_hierarchy(tmp_path: Pat
     assert manifest["tables"] == {
         "sum_intensity": "acqstore/tables/sum_intensity.csv",
         "velocity": "acqstore/tables/velocity.csv",
+    }
+    first_entry = manifest["images"][0]
+    assert first_entry["name"] == "yx.tif"
+    assert first_entry["source"] == {"filename": "yx.tif", "relative_path": None}
+    assert first_entry["summary"] == {
+        "accepted": True,
+        "acquisition": {"date": "", "time": ""},
+        "analysis_types": ["radon_velocity"],
+        "dims": ["y", "x"],
+        "dtype": "uint16",
+        "has_reference_image": False,
+        "num_channels": 1,
+        "num_rois": 0,
+        "shape": [64, 64],
+        "sizes": {"x": 64, "y": 64},
     }
 
     for index, source in enumerate(images):
@@ -117,14 +136,45 @@ def test_exports_heterogeneous_native_images_in_one_zarr_hierarchy(tmp_path: Pat
         np.testing.assert_array_equal(loaded.get_array(0), source.pixels.get_array(0))
         assert (child / "acqstore" / "acq_image.json").is_file()
         assert (child / "acqstore" / "manifest.json").is_file()
-    assert (
+    assert not (
         destination
         / "images"
         / "image_000"
         / "acqstore"
         / "analysis"
         / "radon_velocity.csv"
-    ).is_file()
+    ).exists()
+    instance_table = (
+        destination
+        / "images"
+        / "image_000"
+        / "acqstore"
+        / "analysis"
+        / "radon_velocity__c0__r1.table.csv"
+    )
+    assert instance_table.is_file()
+    child_manifest = json.loads(
+        (
+            destination
+            / "images"
+            / "image_000"
+            / "acqstore"
+            / "manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert child_manifest["version"] == 2
+    assert child_manifest["analyses"] == [
+        {
+            "analysis_name": "radon_velocity",
+            "channel": 0,
+            "id": "radon_velocity__c0__r1",
+            "resources": {
+                "peaks": None,
+                "table": "acqstore/analysis/radon_velocity__c0__r1.table.csv",
+            },
+            "roi_id": 1,
+        }
+    ]
 
     import zarr
 
@@ -152,6 +202,33 @@ def test_export_preserves_source_dirty_state(tmp_path: Path) -> None:
     export_acq_image_list_ome_zarr(collection, tmp_path / "dirty.ome.zarr")
 
     assert image.is_dirty
+
+
+def test_native_v2_reader_loads_exact_per_instance_table(tmp_path: Path) -> None:
+    """Native round-trip follows manifest identity instead of combined CSVs."""
+    image = _image("native.tif", (32, 16), ("Y", "X"))
+    analysis = RadonVelocityAnalysis(channel=0, roi_id=7)
+    analysis.result.table = pd.DataFrame(
+        {"time_s": [0.0, 1.0], "velocity": [2.5, 3.5]}
+    )
+    image.analysis_set.add(analysis)
+    image.analysis_set._results_csv_loaded = True
+    destination = tmp_path / "native.cs.ome.zarr"
+
+    image.save_native_zarr(destination)
+    loaded = AcqImage(
+        str(destination),
+        load_images=False,
+        load_analysis_csv=True,
+    )
+
+    loaded_analysis = loaded.analysis_set.get(AnalysisKey("radon_velocity", 0, 7))
+    assert loaded_analysis is not None
+    pd.testing.assert_frame_equal(loaded_analysis.result.table, analysis.result.table)
+    resources = sorted((destination / "acqstore" / "analysis").glob("*.csv"))
+    assert [path.name for path in resources] == [
+        "radon_velocity__c0__r7.table.csv"
+    ]
 
 
 def test_exports_reference_as_independent_ome_zarr_with_sidecar_geometry(

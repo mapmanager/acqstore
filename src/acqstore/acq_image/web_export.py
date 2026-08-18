@@ -1,6 +1,11 @@
-"""Static web-dataset export for :class:`AcqImage` and :class:`AcqImageList`.
+"""Deprecated static web-dataset export for AcqImage and AcqImageList.
 
-The exported format is intentionally read-only and frontend-agnostic.  It
+AcqStore Web Dataset v1 is a transitional compatibility format. New persisted
+datasets must use the multi-image OME-Zarr collection exporter. Keep this
+module available until Cloudscope Web and AcqStore Server complete migration;
+do not add new callers.
+
+The exported format is intentionally read-only and frontend-agnostic. It
 normalizes all source image formats to OME-Zarr and writes explicit JSON/CSV
 metadata so a thin browser client does not need AcqStore-specific scientific
 logic or source-file loaders.
