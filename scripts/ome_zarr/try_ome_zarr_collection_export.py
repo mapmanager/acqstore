@@ -22,6 +22,11 @@ def main() -> None:
     parser.add_argument('output', type=Path, help='Destination ending in .ome.zarr')
     parser.add_argument('--overwrite', action='store_true', help='Replace an existing output')
     args = parser.parse_args()
+
+    # args.source = Path('')
+    # args.output = Path('')
+    # args.overwrite = True
+
     images = AcqImageList(
         str(args.source),
         load_images=True,

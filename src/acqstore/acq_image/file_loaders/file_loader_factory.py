@@ -6,9 +6,12 @@ from acqstore.acq_image.supported_import_extensions import (
     get_allowed_import_extensions,
     normalize_import_extension_for_path,
 )
+from acqstore.utils.logging import get_logger
 
 from .base_file_loader import BaseFileLoader
 from .loader_registry import create_registered_file_loader
+
+logger = get_logger(__name__)
 
 
 def create_file_loader(path: str) -> BaseFileLoader:
@@ -37,7 +40,10 @@ def create_file_loader(path: str) -> BaseFileLoader:
     allowed = set(get_allowed_import_extensions())
     if suffix not in allowed:
         allowed_text = ', '.join(sorted(allowed))
-        raise ValueError(
-            f'Unsupported acquisition file extension {suffix!r}; expected one of: {allowed_text}'
+        message = (
+            f'Unsupported acquisition file extension {suffix!r} for path {path!r}; '
+            f'expected one of: {allowed_text}'
         )
+        logger.error(message)
+        raise ValueError(message)
     return create_registered_file_loader(path, suffix)

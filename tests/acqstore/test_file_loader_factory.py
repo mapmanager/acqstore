@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -39,8 +40,25 @@ def _nd2_header() -> ImageHeader:
 def test_create_file_loader_rejects_unknown_suffix(tmp_path: Path) -> None:
     path = tmp_path / 'x.xyz'
     path.write_text('')
-    with pytest.raises(ValueError, match='Unsupported acquisition file extension'):
+    with pytest.raises(ValueError, match='Unsupported acquisition file extension') as excinfo:
         create_file_loader(str(path))
+    assert str(path) in str(excinfo.value)
+
+
+def test_create_file_loader_rejects_empty_suffix_and_logs_path(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    path = tmp_path / 'two-channel-sample-data'
+    path.write_text('')
+    with caplog.at_level(
+        logging.ERROR,
+        logger='acqstore.acq_image.file_loaders.file_loader_factory',
+    ):
+        with pytest.raises(ValueError, match=r"Unsupported acquisition file extension ''") as excinfo:
+            create_file_loader(str(path))
+    assert str(path) in str(excinfo.value)
+    assert str(path) in caplog.text
 
 
 def test_create_file_loader_rejects_tiff_suffix(tmp_path: Path) -> None:
