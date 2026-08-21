@@ -37,8 +37,8 @@ def write_acq_image_native_ome_zarr(
     """Write one native AcqStore OME-Zarr image without changing dirty state.
 
     This delegates to the established native directory writer but deliberately
-    avoids :meth:`AcqImage.save_native_zarr`, whose save-like public behavior
-    marks the source object clean after writing.
+    avoids `AcqImage.save_native_zarr`, whose save-like public behavior marks
+    the source object clean after writing.
 
     Args:
         acq_image: Loaded acquisition image to export.

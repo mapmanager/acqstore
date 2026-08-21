@@ -2,6 +2,34 @@
 
 AcqStore writes native OME-NGFF image data plus a small set of AcqStore-owned JSON resources. The OME-NGFF specification remains authoritative for image groups, multiscales, arrays, chunks, codecs, and `zarr.json`. AcqStore's JSON Schema covers only the additive resources described here.
 
+## Export a collection
+
+Use `export_acq_image_list_ome_zarr` to export an `AcqImageList` for a static consumer such as CloudScope Web:
+
+```python
+from acqstore.acq_image import AcqImageList
+from acqstore.acq_image.io.ome_zarr_collection import (
+    export_acq_image_list_ome_zarr,
+)
+
+images = AcqImageList(
+    "/path/to/acquisitions",
+    load_images=True,
+    load_analysis_csv=True,
+)
+
+output = export_acq_image_list_ome_zarr(
+    images,
+    "/path/to/output/collection.ome.zarr",
+    overwrite=False,
+)
+print(output)
+```
+
+The collection must be non-empty, and every member's pixels and analysis tables must be loaded. The destination is a local directory ending in `.ome.zarr`. Export is staged and verified before the completed directory replaces the destination.
+
+See the [`ome_zarr_collection` API reference](api/ome-zarr-collection.md) for parameters, return values, and errors. For a single image without the AcqStore collection wrapper, use `AcqImage.save_as_ome_zarr` instead.
+
 ## Saved collection layout
 
 ```text

@@ -79,8 +79,8 @@ nav:
   - Install: install.md
   - Sample data: sample-data.md
   - Loading an image: loading.md
+  - Export OME-Zarr collections: ome-zarr-export-format.md
   - AcqImage: acqimage.md
-  - OME-Zarr export format: ome-zarr-export-format.md
   - ROIs: rois.md
   - Analysis:
       - analysis/index.md
@@ -105,6 +105,7 @@ nav:
       - api/index.md
       - AcqImage: api/acq-image.md
       - AcqImageList: api/acq-image-list.md
+      - OME-Zarr collection export: api/ome-zarr-collection.md
       - Analysis Core: api/analysis-core.md
       - Velocity Analysis: api/velocity-analysis.md
       - Diameter Analysis: api/diameter-analysis.md
