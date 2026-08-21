@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mapmanager.github.io/acqstore/schemas/acqstore-ome-zarr-contract.schema.json",
+  "title": "AcqStore-owned OME-Zarr JSON contract",
+  "description": "Partial contract for the AcqStore JSON resources stored alongside native OME-NGFF data.",
+  "oneOf": [
+    { "$ref": "#/$defs/collectionManifestV1" },
+    { "$ref": "#/$defs/nativeImageManifestV2" },
+    { "$ref": "#/$defs/acqImageSidecarV2" }
+  ],
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "acquisition": {
+      "type": "object",
+      "required": ["date", "time"],
+      "properties": {
+        "date": { "type": "string" },
+        "time": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "imageSummary": {
+      "type": "object",
+      "required": [
+        "accepted",
+        "acquisition",
+        "analysis_types",
+        "dims",
+        "dtype",
+        "has_reference_image",
+        "num_channels",
+        "num_rois",
+        "shape",
+        "sizes"
+      ],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "acquisition": { "$ref": "#/$defs/acquisition" },
+        "analysis_types": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "dims": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 2
+        },
+        "dtype": { "type": "string", "minLength": 1 },
+        "has_reference_image": { "type": "boolean" },
+        "num_channels": { "$ref": "#/$defs/positiveInteger" },
+        "num_rois": { "$ref": "#/$defs/nonNegativeInteger" },
+        "shape": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/positiveInteger" },
+          "minItems": 2
+        },
+        "sizes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/positiveInteger" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "collectionEntry": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "source",
+        "ome_zarr_path",
+        "sidecar_path",
+        "manifest_path",
+        "summary"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "source": {
+          "type": "object",
+          "required": ["filename", "relative_path"],
+          "properties": {
+            "filename": { "type": ["string", "null"] },
+            "relative_path": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "ome_zarr_path": {
+          "$ref": "#/$defs/relativePath",
+          "description": "Collection-relative path to this member's native OME-Zarr image group."
+        },
+        "sidecar_path": {
+          "$ref": "#/$defs/relativePath",
+          "description": "Collection-relative path to this member's AcqImage sidecar."
+        },
+        "manifest_path": {
+          "$ref": "#/$defs/relativePath",
+          "description": "Collection-relative path to this member's native image manifest."
+        },
+        "reference_image_path": {
+          "$ref": "#/$defs/relativePath",
+          "description": "Collection-relative path to the independent reference OME-Zarr image group. Present exactly when summary.has_reference_image is true."
+        },
+        "summary": { "$ref": "#/$defs/imageSummary" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "summary": {
+                "properties": { "has_reference_image": { "const": true } },
+                "required": ["has_reference_image"]
+              }
+            }
+          },
+          "then": { "required": ["reference_image_path"] },
+          "else": { "not": { "required": ["reference_image_path"] } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "collectionManifestV1": {
+      "type": "object",
+      "required": [
+        "format",
+        "version",
+        "zarr_format",
+        "name",
+        "created_utc",
+        "acqstore_version",
+        "acq_images",
+        "analysis_tables"
+      ],
+      "properties": {
+        "format": { "const": "acqstore-acq-image-collection" },
+        "version": { "const": 1 },
+        "zarr_format": { "const": 3 },
+        "name": { "type": "string", "minLength": 1 },
+        "created_utc": { "type": "string", "format": "date-time" },
+        "acqstore_version": { "type": "string", "minLength": 1 },
+        "acq_images": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/collectionEntry" },
+          "minItems": 1
+        },
+        "analysis_tables": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/relativePath" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "analysisResources": {
+      "type": "object",
+      "required": ["table", "peaks"],
+      "properties": {
+        "table": { "anyOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "null" }] },
+        "peaks": { "anyOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "analysisManifestEntry": {
+      "type": "object",
+      "required": ["id", "analysis_name", "channel", "roi_id", "resources"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "analysis_name": { "type": "string", "minLength": 1 },
+        "channel": { "$ref": "#/$defs/nonNegativeInteger" },
+        "roi_id": { "$ref": "#/$defs/positiveInteger" },
+        "resources": { "$ref": "#/$defs/analysisResources" }
+      },
+      "additionalProperties": false
+    },
+    "nativeImageManifestV2": {
+      "type": "object",
+      "required": ["format", "version", "image_group", "sidecar", "zarr_format", "analyses"],
+      "properties": {
+        "format": { "const": "acqstore-native-ome-zarr" },
+        "version": { "const": 2 },
+        "image_group": { "type": "string", "minLength": 1 },
+        "sidecar": { "$ref": "#/$defs/relativePath" },
+        "reference_image": {
+          "$ref": "#/$defs/relativePath",
+          "description": "Member-relative path to the independent reference OME-Zarr image group."
+        },
+        "zarr_format": { "enum": [2, 3] },
+        "analyses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysisManifestEntry" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "rectRoiV1": {
+      "type": "object",
+      "required": ["roi_id", "roi_type", "version", "name", "note", "data"],
+      "properties": {
+        "roi_id": { "$ref": "#/$defs/positiveInteger" },
+        "roi_type": { "const": "rectroi" },
+        "version": { "const": "1.0" },
+        "name": { "type": "string" },
+        "note": { "type": "string" },
+        "data": {
+          "type": "object",
+          "required": ["row_start", "row_stop", "col_start", "col_stop"],
+          "properties": {
+            "row_start": { "$ref": "#/$defs/nonNegativeInteger" },
+            "row_stop": { "$ref": "#/$defs/nonNegativeInteger" },
+            "col_start": { "$ref": "#/$defs/nonNegativeInteger" },
+            "col_stop": { "$ref": "#/$defs/nonNegativeInteger" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "lineRoiV1": {
+      "type": "object",
+      "required": ["roi_id", "roi_type", "version", "name", "note", "data"],
+      "properties": {
+        "roi_id": { "$ref": "#/$defs/positiveInteger" },
+        "roi_type": { "const": "linesegmentroi" },
+        "version": { "const": "1.0" },
+        "name": { "type": "string" },
+        "note": { "type": "string" },
+        "data": {
+          "type": "object",
+          "required": ["row0", "col0", "row1", "col1"],
+          "properties": {
+            "row0": { "$ref": "#/$defs/nonNegativeInteger" },
+            "col0": { "$ref": "#/$defs/nonNegativeInteger" },
+            "row1": { "$ref": "#/$defs/nonNegativeInteger" },
+            "col1": { "$ref": "#/$defs/nonNegativeInteger" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "referenceImageMetadataV1": {
+      "type": "object",
+      "required": [
+        "shape",
+        "dims",
+        "sizes",
+        "dtype",
+        "num_channels",
+        "physical_unit_y",
+        "physical_unit_x",
+        "physical_label_y",
+        "physical_label_x",
+        "has_scan_path",
+        "scan_path_num_points",
+        "line_roi",
+        "scan_path_x_pixels",
+        "scan_path_y_pixels"
+      ],
+      "properties": {
+        "shape": { "type": "string", "minLength": 1 },
+        "dims": { "type": "string", "minLength": 1 },
+        "sizes": { "type": "string", "minLength": 1 },
+        "dtype": { "type": "string", "minLength": 1 },
+        "num_channels": { "$ref": "#/$defs/positiveInteger" },
+        "physical_unit_y": { "type": "number", "exclusiveMinimum": 0 },
+        "physical_unit_x": { "type": "number", "exclusiveMinimum": 0 },
+        "physical_label_y": { "type": "string", "minLength": 1 },
+        "physical_label_x": { "type": "string", "minLength": 1 },
+        "has_scan_path": {
+          "type": "boolean",
+          "description": "Whether scanner trajectory coordinates are present."
+        },
+        "scan_path_num_points": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Number of paired coordinates in both scan-path arrays."
+        },
+        "line_roi": {
+          "type": "string",
+          "description": "Legacy display string for the reference line; consumers should use the numeric scan-path arrays."
+        },
+        "scan_path_x_pixels": {
+          "type": "array",
+          "description": "Scanner trajectory X coordinates in full-resolution reference-image pixels.",
+          "items": { "type": "number" }
+        },
+        "scan_path_y_pixels": {
+          "type": "array",
+          "description": "Scanner trajectory Y coordinates in full-resolution reference-image pixels.",
+          "items": { "type": "number" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "has_scan_path": { "const": true } }, "required": ["has_scan_path"] },
+          "then": {
+            "properties": {
+              "scan_path_num_points": { "minimum": 2 },
+              "scan_path_x_pixels": { "minItems": 2 },
+              "scan_path_y_pixels": { "minItems": 2 }
+            }
+          },
+          "else": {
+            "properties": {
+              "scan_path_num_points": { "const": 0 },
+              "scan_path_x_pixels": { "maxItems": 0 },
+              "scan_path_y_pixels": { "maxItems": 0 }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "analysisSidecarEntry": {
+      "type": "object",
+      "required": ["analysis_name", "channel", "roi_id", "summary", "detection_params"],
+      "properties": {
+        "analysis_name": { "type": "string", "minLength": 1 },
+        "channel": { "$ref": "#/$defs/nonNegativeInteger" },
+        "roi_id": { "$ref": "#/$defs/positiveInteger" },
+        "summary": { "type": "object" },
+        "detection_params": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "acqImageSidecarV2": {
+      "type": "object",
+      "required": [
+        "version",
+        "accepted",
+        "rois",
+        "experiment_metadata",
+        "image_header_metadata",
+        "analysis",
+        "image_contrast"
+      ],
+      "properties": {
+        "version": { "const": 2 },
+        "accepted": { "type": "boolean" },
+        "rois": {
+          "type": "array",
+          "items": { "oneOf": [{ "$ref": "#/$defs/rectRoiV1" }, { "$ref": "#/$defs/lineRoiV1" }] }
+        },
+        "experiment_metadata": { "type": ["object", "null"] },
+        "image_header_metadata": { "type": "object" },
+        "analysis": { "type": "array", "items": { "$ref": "#/$defs/analysisSidecarEntry" } },
+        "image_contrast": { "type": "object" },
+        "reference_image_metadata": { "$ref": "#/$defs/referenceImageMetadataV1" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

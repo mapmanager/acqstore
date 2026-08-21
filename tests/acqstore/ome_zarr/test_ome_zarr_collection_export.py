@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from importlib.resources import files
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+from jsonschema import Draft202012Validator, FormatChecker
 
 from acqstore.acq_image.acq_image import AcqImage
 from acqstore.acq_image.acq_image_list import AcqImageList
@@ -22,6 +25,31 @@ from acqstore.acq_image.io.ome_zarr_collection import (
     export_acq_image_list_ome_zarr,
     write_acq_image_native_ome_zarr,
 )
+
+
+def _contract_validator(definition: str) -> Draft202012Validator:
+    """Return a validator for one definition in the packaged export contract."""
+    schema_resource = files('acqstore.acq_image.io.export_schema').joinpath('acqstore_ome_zarr_contract.schema.json')
+    contract = json.loads(schema_resource.read_text(encoding='utf-8'))
+    Draft202012Validator.check_schema(contract)
+    selected = {
+        '$schema': contract['$schema'],
+        '$ref': f'#/$defs/{definition}',
+        '$defs': contract['$defs'],
+    }
+    return Draft202012Validator(selected, format_checker=FormatChecker())
+
+
+def _validate_contract(definition: str, payload: object) -> None:
+    """Raise when ``payload`` does not satisfy one AcqStore JSON contract."""
+    _contract_validator(definition).validate(payload)
+
+
+def _validate_contract_document(payload: object) -> None:
+    """Validate one complete AcqStore-owned JSON document at the schema root."""
+    schema_resource = files('acqstore.acq_image.io.export_schema').joinpath('acqstore_ome_zarr_contract.schema.json')
+    contract = json.loads(schema_resource.read_text(encoding='utf-8'))
+    Draft202012Validator(contract, format_checker=FormatChecker()).validate(payload)
 
 
 def _collection(*images: AcqImage) -> AcqImageList:
@@ -100,6 +128,8 @@ def test_exports_heterogeneous_native_images_in_one_zarr_hierarchy(tmp_path: Pat
 
     assert result == destination.resolve()
     manifest = json.loads((destination / 'acqstore' / 'acq_image_collection.json').read_text())
+    _validate_contract('collectionManifestV1', manifest)
+    _validate_contract_document(manifest)
     assert manifest['format'] == COLLECTION_FORMAT
     assert manifest['version'] == 1
     assert manifest['zarr_format'] == 3
@@ -144,6 +174,11 @@ def test_exports_heterogeneous_native_images_in_one_zarr_hierarchy(tmp_path: Pat
     instance_table = destination / 'acq_images' / 'acq_image_000' / 'acqstore' / 'analysis' / 'radon_velocity__c0__r1.table.csv'
     assert instance_table.is_file()
     child_manifest = json.loads((destination / 'acq_images' / 'acq_image_000' / 'acqstore' / 'manifest.json').read_text(encoding='utf-8'))
+    _validate_contract('nativeImageManifestV2', child_manifest)
+    _validate_contract_document(child_manifest)
+    child_sidecar = json.loads((destination / 'acq_images' / 'acq_image_000' / 'acqstore' / 'acq_image.json').read_text(encoding='utf-8'))
+    _validate_contract('acqImageSidecarV2', child_sidecar)
+    _validate_contract_document(child_sidecar)
     assert child_manifest['version'] == 2
     assert child_manifest['analyses'] == [
         {
@@ -251,9 +286,72 @@ def test_exports_reference_as_independent_ome_zarr_with_sidecar_geometry(
     assert len(reference_group.attrs['ome']['multiscales'][0]['datasets']) == 6
     sidecar = json.loads((destination / 'acq_images' / 'acq_image_000' / 'acqstore' / 'acq_image.json').read_text(encoding='utf-8'))
     metadata = sidecar['reference_image_metadata']
+    native_manifest = json.loads((destination / 'acq_images' / 'acq_image_000' / 'acqstore' / 'manifest.json').read_text(encoding='utf-8'))
+    _validate_contract('collectionManifestV1', manifest)
+    _validate_contract('nativeImageManifestV2', native_manifest)
+    _validate_contract('acqImageSidecarV2', sidecar)
     assert metadata['line_roi'] == '(273.0, 222.0, 261.0, 228.0)'
     assert metadata['scan_path_x_pixels'] == [273.0, 261.0]
     assert metadata['scan_path_y_pixels'] == [222.0, 228.0]
+
+
+def test_export_contract_rejects_malformed_reference_declarations(tmp_path: Path) -> None:
+    """Reference paths and scan geometry fail at their owning JSON boundaries."""
+    image = _image('reference.oir', (30000, 14), ('Y', 'X'))
+    _attach_reference_image(image)
+    destination = tmp_path / 'reference.ome.zarr'
+    export_acq_image_list_ome_zarr(_collection(image), destination)
+
+    manifest = json.loads((destination / 'acqstore' / 'acq_image_collection.json').read_text(encoding='utf-8'))
+    missing_path = deepcopy(manifest)
+    del missing_path['acq_images'][0]['reference_image_path']
+    assert list(_contract_validator('collectionManifestV1').iter_errors(missing_path))
+
+    escaping_path = deepcopy(manifest)
+    escaping_path['acq_images'][0]['reference_image_path'] = '../reference_image'
+    assert list(_contract_validator('collectionManifestV1').iter_errors(escaping_path))
+
+    sidecar = json.loads((destination / 'acq_images' / 'acq_image_000' / 'acqstore' / 'acq_image.json').read_text(encoding='utf-8'))
+    malformed_scan = deepcopy(sidecar)
+    malformed_scan['reference_image_metadata']['scan_path_x_pixels'] = ['not-a-number']
+    assert list(_contract_validator('acqImageSidecarV2').iter_errors(malformed_scan))
+
+    invalid_channel_count = deepcopy(sidecar)
+    invalid_channel_count['reference_image_metadata']['num_channels'] = 0
+    assert list(_contract_validator('acqImageSidecarV2').iter_errors(invalid_channel_count))
+
+    longer_scan = deepcopy(sidecar)
+    longer_metadata = longer_scan['reference_image_metadata']
+    longer_metadata['scan_path_num_points'] = 3
+    longer_metadata['scan_path_x_pixels'] = [1.0, 2.0, 3.0]
+    longer_metadata['scan_path_y_pixels'] = [4.0, 5.0, 6.0]
+    _validate_contract('acqImageSidecarV2', longer_scan)
+
+
+def test_export_contract_accepts_two_channel_reference_without_scan_path(tmp_path: Path) -> None:
+    """A two-channel reference image may legitimately have no scanner trajectory."""
+    image = _image('reference.oir', (64, 32), ('Y', 'X'))
+    reference = ReferenceImage(
+        array=np.arange(2 * 32 * 32, dtype=np.uint16).reshape(2, 32, 32),
+        dims=('C', 'Y', 'X'),
+        num_channels=2,
+        line_roi=None,
+        coord_units=(('Y', 'um'), ('X', 'um')),
+        coord_scales=(('Y', 1.0), ('X', 1.0)),
+        coords=(),
+        scan_path=None,
+    )
+    image.images._referenceImage = reference
+    destination = tmp_path / 'reference-no-path.ome.zarr'
+    export_acq_image_list_ome_zarr(_collection(image), destination)
+
+    sidecar = json.loads((destination / 'acq_images' / 'acq_image_000' / 'acqstore' / 'acq_image.json').read_text(encoding='utf-8'))
+    _validate_contract('acqImageSidecarV2', sidecar)
+    metadata = sidecar['reference_image_metadata']
+    assert metadata['has_scan_path'] is False
+    assert metadata['scan_path_num_points'] == 0
+    assert metadata['scan_path_x_pixels'] == []
+    assert metadata['scan_path_y_pixels'] == []
 
 
 def test_rejects_unloaded_pixels_during_preflight(tmp_path: Path) -> None:

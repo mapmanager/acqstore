@@ -80,6 +80,7 @@ nav:
   - Sample data: sample-data.md
   - Loading an image: loading.md
   - AcqImage: acqimage.md
+  - OME-Zarr export format: ome-zarr-export-format.md
   - ROIs: rois.md
   - Analysis:
       - analysis/index.md
