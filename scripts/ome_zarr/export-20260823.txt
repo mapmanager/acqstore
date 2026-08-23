@@ -1,0 +1,3 @@
+uv run python scripts/ome_zarr/try_ome_zarr_collection_export.py \
+/Users/cudmore/Sites/cs_project/cloudscope-data/data/manning_velocity_20260625 \
+/Users/cudmore/Sites/cs_project/cloudscope-data/ome-zarr-output/manning-velocity-20260625.ome.zarr
