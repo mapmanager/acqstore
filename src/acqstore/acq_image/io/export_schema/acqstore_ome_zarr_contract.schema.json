@@ -157,8 +157,17 @@
         },
         "analysis_tables": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/relativePath" }
+          "additionalProperties": { "$ref": "#/$defs/analysisTableDescriptor" }
         }
+      },
+      "additionalProperties": false
+    },
+    "analysisTableDescriptor": {
+      "type": "object",
+      "required": ["csv"],
+      "properties": {
+        "csv": { "$ref": "#/$defs/relativePath" },
+        "nicepool_state": { "$ref": "#/$defs/relativePath" }
       },
       "additionalProperties": false
     },

@@ -50,6 +50,17 @@ collection.ome.zarr/
 
 The schema is a development and validation resource in the AcqStore package. It is not copied into exported OME-Zarr stores.
 
+Collection-level ``analysis_tables`` entries are descriptors. Each descriptor
+contains a collection-relative ``csv`` path and may contain a
+``nicepool_state`` path for an editable complete NicePool workspace. An
+analysis table with no meaningful analysis results is omitted rather than
+exported with placeholder-only rows.
+
+Every exported analysis CSV row carries two distinct identifiers:
+
+- ``pool_row_id`` uniquely identifies one analysis row.
+- ``acq_image_id`` references an ``acq_images[].id`` entry in the collection manifest.
+
 ## Contract definitions
 
 The canonical schema is `acqstore_ome_zarr_contract.schema.json` in `acqstore.acq_image.io.export_schema`. It uses JSON Schema Draft 2020-12 and currently defines:

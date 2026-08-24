@@ -97,7 +97,7 @@ def export_acq_image_list_ome_zarr(
 
     if not isinstance(acq_image_list, AcqImageList):
         raise TypeError('acq_image_list must be an AcqImageList')
-    dest = _validated_destination(destination)
+    dest = validate_acq_image_collection_destination(destination)
     members = tuple(acq_image_list)
     if not members:
         raise ValueError('Cannot export an empty AcqImageList')
@@ -117,7 +117,7 @@ def export_acq_image_list_ome_zarr(
     return dest
 
 
-def _validated_destination(destination: str | Path) -> Path:
+def validate_acq_image_collection_destination(destination: str | Path) -> Path:
     """Return a normalized local ``.ome.zarr`` destination.
 
     Args:
@@ -136,6 +136,114 @@ def _validated_destination(destination: str | Path) -> Path:
     if not dest.name.lower().endswith('.ome.zarr'):
         raise ValueError("Collection destination must end in '.ome.zarr'")
     return dest
+
+
+def _nicepool_plot_state(*, plot_type: str, x_column: str, y_column: str, group_column: str | None) -> dict[str, Any]:
+    """Return one complete NicePool plot-state document fragment."""
+    return {
+        'plotType': plot_type,
+        'preFilters': {},
+        'xColumn': x_column,
+        'yColumn': y_column,
+        'groupColumn': group_column,
+        'colorColumn': None,
+        'useAbsoluteValue': False,
+        'removeValuesThreshold': None,
+        'swarmJitterAmount': 0.35,
+        'swarmGroupOffset': 0.3,
+        'jitterSeed': 17,
+        'histogramBins': 50,
+        'showRaw': True,
+        'showMean': True,
+        'showErrorBars': False,
+        'errorBarType': 'sem',
+        'pointSize': 7,
+        'showLegend': True,
+        'legendPosition': 'bottom',
+        'showPlotlyToolbar': True,
+        'showHover': False,
+        'showAxes': True,
+        'showHorizontalGrid': True,
+        'showVerticalGrid': True,
+        'cvEpsilon': 0.01,
+    }
+
+
+def _velocity_nicepool_state(dataframe: pd.DataFrame) -> dict[str, Any]:
+    """Return the editable default NicePool workspace for a velocity table."""
+    grouping_candidates = ('condition', 'grandparent', 'parent', 'name')
+    group_column = next(
+        (column for column in grouping_candidates if column in dataframe.columns and dataframe[column].notna().any()),
+        'name',
+    )
+    numeric_candidates = ('velocity_mean', 'velocity_median', 'hr_lomb_bpm', 'hr_welch_bpm')
+    value_column = next(
+        (column for column in numeric_candidates if column in dataframe.columns and dataframe[column].notna().any()),
+        'velocity_mean',
+    )
+    swarm = _nicepool_plot_state(
+        plot_type='swarm',
+        x_column=value_column,
+        y_column=value_column,
+        group_column=group_column,
+    )
+    cumulative = _nicepool_plot_state(
+        plot_type='cumulativeHistogram',
+        x_column=value_column,
+        y_column=value_column,
+        group_column=None,
+    )
+    return {
+        'schemaVersion': 1,
+        'layout': '1x2',
+        'activePlotIndex': 0,
+        'plots': [swarm, cumulative, dict(swarm), dict(cumulative)],
+    }
+
+
+def _analysis_table_with_image_ids(
+    dataframe: pd.DataFrame,
+    members: tuple[AcqImage, ...],
+) -> pd.DataFrame:
+    """Return an export copy whose rows reference manifest AcqImage IDs."""
+    table = dataframe.copy()
+    image_ids: dict[str, str] = {}
+    for index, member in enumerate(members):
+        image_id = f'acq_image_{index:03d}'
+        for identity in (str(member.path), str(member.file_id)):
+            previous = image_ids.setdefault(identity, image_id)
+            if previous != image_id:
+                raise ValueError(f'Duplicate AcqImage source identity: {identity}')
+    if 'path' not in table.columns:
+        raise ValueError('Analysis table is missing required path column')
+    mapped = table['path'].astype(str).map(image_ids)
+    if mapped.isna().any():
+        missing = str(table.loc[mapped.isna(), 'path'].iloc[0])
+        raise ValueError(f'Analysis table row does not reference an exported AcqImage: {missing}')
+    if 'pool_row_id' not in table.columns or table['pool_row_id'].isna().any():
+        raise ValueError('Analysis table contains an empty pool_row_id')
+    if table['pool_row_id'].astype(str).duplicated().any():
+        duplicate = table.loc[table['pool_row_id'].astype(str).duplicated(), 'pool_row_id'].iloc[0]
+        raise ValueError(f'Analysis table contains duplicate pool_row_id: {duplicate}')
+    table.insert(1, 'acq_image_id', mapped)
+    return table
+
+
+def _has_velocity_results(
+    dataframe: pd.DataFrame,
+    result_columns: tuple[str, ...],
+) -> bool:
+    """Return whether a velocity pool contains at least one analysis result."""
+    return bool(result_columns) and bool(dataframe[list(result_columns)].notna().any(axis=None))
+
+
+def _has_sum_intensity_results(dataframe: pd.DataFrame, row_type_column: str) -> bool:
+    """Return whether a sum-intensity pool contains at least one analyzed row."""
+    return (
+        row_type_column in dataframe.columns
+        and bool(dataframe[row_type_column].notna().any())
+        and bool(dataframe[row_type_column].astype(str).ne('not_analyzed').any())
+    )
 
 
 def _validate_loaded_members(members: tuple[AcqImage, ...]) -> None:
@@ -198,11 +306,27 @@ def _build_collection(
 
     tables_dir = staged / 'acqstore' / 'analysis_tables'
     tables_dir.mkdir(parents=True, exist_ok=False)
-    _write_dataframe(acq_image_list.velocity_analysis_pool.get_dataframe(), tables_dir / 'velocity.csv')
-    _write_dataframe(
-        acq_image_list.sum_intensity_analysis_pool.get_dataframe(),
-        tables_dir / 'sum_intensity.csv',
-    )
+    analysis_tables: dict[str, dict[str, str]] = {}
+    velocity_pool = acq_image_list.velocity_analysis_pool
+    velocity = velocity_pool.get_dataframe()
+    velocity_result_columns = tuple(column for column, _, _ in velocity_pool.get_analysis_column_specs())
+    if _has_velocity_results(velocity, velocity_result_columns):
+        velocity = _analysis_table_with_image_ids(velocity, members)
+        velocity_path = tables_dir / 'velocity.csv'
+        state_path = tables_dir / 'velocity.nicepool.json'
+        _write_dataframe(velocity, velocity_path)
+        _write_json(state_path, _velocity_nicepool_state(velocity))
+        analysis_tables['velocity'] = {
+            'csv': velocity_path.relative_to(staged).as_posix(),
+            'nicepool_state': state_path.relative_to(staged).as_posix(),
+        }
+    sum_pool = acq_image_list.sum_intensity_analysis_pool
+    sum_intensity = sum_pool.get_dataframe()
+    if _has_sum_intensity_results(sum_intensity, sum_pool.row_type_column):
+        sum_intensity = _analysis_table_with_image_ids(sum_intensity, members)
+        sum_path = tables_dir / 'sum_intensity.csv'
+        _write_dataframe(sum_intensity, sum_path)
+        analysis_tables['sum_intensity'] = {'csv': sum_path.relative_to(staged).as_posix()}
     _write_json(
         staged.joinpath(*COLLECTION_MANIFEST_PATH.parts),
         {
@@ -213,10 +337,7 @@ def _build_collection(
             'created_utc': _utc_now_iso(),
             'acqstore_version': _acqstore_version(),
             'acq_images': image_entries,
-            'analysis_tables': {
-                'velocity': 'acqstore/analysis_tables/velocity.csv',
-                'sum_intensity': 'acqstore/analysis_tables/sum_intensity.csv',
-            },
+            'analysis_tables': analysis_tables,
         },
     )
 
@@ -445,10 +566,32 @@ def _verify_collection(staged: Path, *, expected_count: int) -> None:
     tables = manifest.get('analysis_tables')
     if not isinstance(tables, dict):
         raise ValueError('Staged collection manifest tables must be an object')
-    for table_name in ('velocity', 'sum_intensity'):
-        table_path = _safe_manifest_path(staged, tables.get(table_name))
+    for table_name, descriptor in tables.items():
+        if not isinstance(descriptor, dict):
+            raise ValueError(f'Collection table descriptor is invalid: {table_name}')
+        table_path = _safe_manifest_path(staged, descriptor.get('csv'))
         if not table_path.is_file():
             raise ValueError(f'Collection table is missing: {table_name}')
+        table = pd.read_csv(
+            table_path,
+            dtype={'pool_row_id': 'string', 'acq_image_id': 'string'},
+        )
+        for identity_column in ('pool_row_id', 'acq_image_id'):
+            if identity_column not in table.columns or table[identity_column].isna().any():
+                raise ValueError(f'Collection table {table_name} has invalid {identity_column}')
+        if table['pool_row_id'].duplicated().any():
+            raise ValueError(f'Collection table has duplicate pool_row_id: {table_name}')
+        unknown_image_ids = set(table['acq_image_id']) - seen_ids
+        if unknown_image_ids:
+            raise ValueError(f'Collection table {table_name} references unknown AcqImage ID: {sorted(unknown_image_ids)[0]}')
+        state_raw = descriptor.get('nicepool_state')
+        if state_raw is not None:
+            state_path = _safe_manifest_path(staged, state_raw)
+            if not state_path.is_file():
+                raise ValueError(f'NicePool state is missing: {table_name}')
+            state = json.loads(state_path.read_text(encoding='utf-8'))
+            if not isinstance(state, dict):
+                raise ValueError(f'NicePool state must be an object: {table_name}')
 
 
 def _safe_manifest_path(root: Path, raw: Any) -> Path:

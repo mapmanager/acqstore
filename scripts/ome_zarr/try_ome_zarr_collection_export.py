@@ -12,7 +12,10 @@ import json
 from pathlib import Path
 
 from acqstore.acq_image.acq_image_list import AcqImageList
-from acqstore.acq_image.io.ome_zarr_collection import export_acq_image_list_ome_zarr
+from acqstore.acq_image.io.ome_zarr_collection import (
+    export_acq_image_list_ome_zarr,
+    validate_acq_image_collection_destination,
+)
 
 
 def main() -> None:
@@ -22,6 +25,9 @@ def main() -> None:
     parser.add_argument('output', type=Path, help='Destination ending in .ome.zarr')
     parser.add_argument('--overwrite', action='store_true', help='Replace an existing output')
     args = parser.parse_args()
+
+    # Fail before the expensive image and analysis-table load.
+    validate_acq_image_collection_destination(args.output)
 
     # args.source = Path('')
     # args.output = Path('')
@@ -40,6 +46,10 @@ def main() -> None:
     )
     manifest = json.loads((destination / 'acqstore' / 'acq_image_collection.json').read_text(encoding='utf-8'))
     print(f'Exported collection: {destination}')
+    for name, descriptor in manifest['analysis_tables'].items():
+        print(f'  {name} CSV: {destination / descriptor["csv"]}')
+        if 'nicepool_state' in descriptor:
+            print(f'  {name} NicePool state: {destination / descriptor["nicepool_state"]}')
     for entry in manifest['acq_images']:
         print(f'  {entry["id"]}: {entry["ome_zarr_path"]}')
 

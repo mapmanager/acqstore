@@ -142,8 +142,10 @@ def test_exports_heterogeneous_native_images_in_one_zarr_hierarchy(tmp_path: Pat
         'acq_image_002',
     ]
     assert manifest['analysis_tables'] == {
-        'sum_intensity': 'acqstore/analysis_tables/sum_intensity.csv',
-        'velocity': 'acqstore/analysis_tables/velocity.csv',
+        'velocity': {
+            'csv': 'acqstore/analysis_tables/velocity.csv',
+            'nicepool_state': 'acqstore/analysis_tables/velocity.nicepool.json',
+        },
     }
     first_entry = manifest['acq_images'][0]
     assert first_entry['name'] == 'yx.tif'
@@ -205,9 +207,17 @@ def test_exports_heterogeneous_native_images_in_one_zarr_hierarchy(tmp_path: Pat
     assert len(third.attrs['ome']['multiscales'][0]['datasets']) == 1
 
     velocity = pd.read_csv(destination / 'acqstore' / 'analysis_tables' / 'velocity.csv')
-    sum_intensity = pd.read_csv(destination / 'acqstore' / 'analysis_tables' / 'sum_intensity.csv')
-    assert list(velocity.columns) == list(collection.velocity_analysis_pool.columns)
-    assert list(sum_intensity.columns) == list(collection.sum_intensity_analysis_pool.columns)
+    assert list(velocity.columns) == [
+        'pool_row_id',
+        'acq_image_id',
+        *collection.velocity_analysis_pool.columns[1:],
+    ]
+    assert set(velocity['acq_image_id']) == {'acq_image_000'}
+    assert not (destination / 'acqstore' / 'analysis_tables' / 'sum_intensity.csv').exists()
+    state = json.loads((destination / 'acqstore' / 'analysis_tables' / 'velocity.nicepool.json').read_text())
+    assert state['layout'] == '1x2'
+    assert state['plots'][0]['plotType'] == 'swarm'
+    assert state['plots'][1]['plotType'] == 'cumulativeHistogram'
 
 
 def test_export_preserves_source_dirty_state(tmp_path: Path) -> None:
@@ -219,6 +229,10 @@ def test_export_preserves_source_dirty_state(tmp_path: Path) -> None:
     export_acq_image_list_ome_zarr(collection, tmp_path / 'dirty.ome.zarr')
 
     assert image.is_dirty
+    manifest = json.loads((tmp_path / 'dirty.ome.zarr' / 'acqstore' / 'acq_image_collection.json').read_text())
+    assert manifest['analysis_tables'] == {}
+    assert not (tmp_path / 'dirty.ome.zarr' / 'acqstore' / 'analysis_tables' / 'velocity.csv').exists()
+    assert not (tmp_path / 'dirty.ome.zarr' / 'acqstore' / 'analysis_tables' / 'sum_intensity.csv').exists()
 
 
 def test_collection_child_is_byte_identical_to_native_export(tmp_path: Path) -> None:
