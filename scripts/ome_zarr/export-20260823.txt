@@ -6,3 +6,6 @@ uv run python scripts/ome_zarr/try_ome_zarr_collection_export.py \
   velocity CSV: /Users/cudmore/Sites/cs_project/cloudscope-data/ome-zarr-output/manning-velocity-20260625-v2.ome.zarr/acqstore/analysis_tables/velocity.csv
   velocity NicePool state: /Users/cudmore/Sites/cs_project/cloudscope-data/ome-zarr-output/manning-velocity-20260625-v2.ome.zarr/acqstore/analysis_tables/velocity.nicepool.json
 
+uv run python scripts/ome_zarr/try_ome_zarr_collection_export.py \
+/Users/cudmore/Sites/cs_project/cloudscope-data/tmp/threed-examples \
+/Users/cudmore/Sites/cs_project/cloudscope-data/ome-zarr-output/threed-examples-v1.ome.zarr
