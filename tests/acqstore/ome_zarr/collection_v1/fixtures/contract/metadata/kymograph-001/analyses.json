@@ -1,0 +1,26 @@
+{
+  "format": "acqstore-analyses",
+  "version": 1,
+  "image_id": "image-kymograph-001",
+  "analyses": [
+    {
+      "id": "analysis-velocity-001",
+      "type": "velocity",
+      "roi_id": "roi-rectangle-003",
+      "channel": 0,
+      "parameters": {
+        "threshold": 0.5
+      },
+      "summary": {
+        "count": 2
+      },
+      "resources": [
+        {
+          "id": "table",
+          "media_type": "text/csv",
+          "path": "analysis/kymograph-001/velocity.csv"
+        }
+      ]
+    }
+  ]
+}

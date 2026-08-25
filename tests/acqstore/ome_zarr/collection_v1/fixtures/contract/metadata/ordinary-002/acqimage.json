@@ -1,0 +1,9 @@
+{
+  "format": "acqstore-acqimage",
+  "version": 1,
+  "image_id": "image-ordinary-002",
+  "accepted": false,
+  "rois": [],
+  "experiment_metadata": {},
+  "image_metadata": {}
+}

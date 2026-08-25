@@ -3,10 +3,14 @@ search:
   exclude: true
 ---
 
-# OME-Zarr collection export
+# OME-Zarr Collection v1 export
 
-::: acqstore.acq_image.io.ome_zarr_collection.export_acq_image_list_ome_zarr
+::: acqstore.acq_image.io.ome_zarr_collection_v1.exporter.AcqStoreOmeZarrCollectionExporter
 
-The lower-level `write_acq_image_native_ome_zarr` function writes one native child store and is primarily used by the collection exporter:
+The collection exporter delegates each member to the focused image exporter:
 
-::: acqstore.acq_image.io.ome_zarr_collection.write_acq_image_native_ome_zarr
+::: acqstore.acq_image.io.ome_zarr_collection_v1.exporter.AcqStoreOmeZarrImageExporter
+
+Validation uses the published Draft 2020-12 schema plus cross-document checks:
+
+::: acqstore.acq_image.io.ome_zarr_collection_v1.validator.validate_collection

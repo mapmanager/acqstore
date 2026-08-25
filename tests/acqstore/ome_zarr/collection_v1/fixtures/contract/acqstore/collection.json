@@ -1,0 +1,53 @@
+{
+  "format": "acqstore-ome-zarr-collection",
+  "version": 1,
+  "id": "collection-example-001",
+  "name": "AcqStore v1 complete example",
+  "created": "2026-08-25T14:00:00Z",
+  "producer": {
+    "name": "acqstore-example",
+    "version": "1.0.0"
+  },
+  "members": [
+    {
+      "id": "image-kymograph-001",
+      "name": "Kymograph with reference image",
+      "ome_zarr": "images/kymograph-001",
+      "resources": {
+        "acqimage": "metadata/kymograph-001/acqimage.json",
+        "analyses": "metadata/kymograph-001/analyses.json"
+      },
+      "reference_image": {
+        "ome_zarr": "images/reference-001",
+        "metadata": "metadata/kymograph-001/reference-image.json"
+      },
+      "summary": {
+        "accepted": true,
+        "has_reference_image": true
+      }
+    },
+    {
+      "id": "image-ordinary-002",
+      "name": "Ordinary image",
+      "ome_zarr": "images/ordinary-002",
+      "resources": {
+        "acqimage": "metadata/ordinary-002/acqimage.json"
+      }
+    }
+  ],
+  "resources": {
+    "tables": [
+      {
+        "id": "velocity-pool",
+        "media_type": "text/csv",
+        "path": "tables/velocity.csv"
+      },
+      {
+        "id": "sum-intensity-pool",
+        "media_type": "text/csv",
+        "path": "tables/sum-intensity.csv"
+      }
+    ]
+  },
+  "metadata": {}
+}

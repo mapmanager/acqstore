@@ -1,0 +1,15 @@
+{
+  "format": "acqstore-reference-image",
+  "version": 1,
+  "image_id": "image-kymograph-001",
+  "scan_path": {
+    "coordinate_space": "reference-image-full-resolution-pixels",
+    "points": [
+      [12, 24],
+      [318, 220]
+    ]
+  },
+  "metadata": {
+    "description": "Reference image for the example scan"
+  }
+}

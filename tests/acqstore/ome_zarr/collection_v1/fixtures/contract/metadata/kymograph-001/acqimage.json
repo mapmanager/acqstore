@@ -1,0 +1,41 @@
+{
+  "format": "acqstore-acqimage",
+  "version": 1,
+  "image_id": "image-kymograph-001",
+  "accepted": true,
+  "rois": [
+    {
+      "id": "roi-point-001",
+      "type": "point",
+      "coordinate_space": "primary-image-full-resolution-pixels",
+      "position": [10, 20]
+    },
+    {
+      "id": "roi-line-002",
+      "type": "line",
+      "coordinate_space": "primary-image-full-resolution-pixels",
+      "start": [5, 10],
+      "stop": [50, 10]
+    },
+    {
+      "id": "roi-rectangle-003",
+      "type": "rectangle",
+      "coordinate_space": "primary-image-full-resolution-pixels",
+      "start": [12, 24],
+      "stop": [32, 44]
+    }
+  ],
+  "experiment_metadata": {
+    "preparation": "example"
+  },
+  "image_metadata": {
+    "instrument": "example microscope"
+  },
+  "axis_display": {
+    "y": {
+      "type": "time",
+      "unit": "second",
+      "scale": 0.002
+    }
+  }
+}

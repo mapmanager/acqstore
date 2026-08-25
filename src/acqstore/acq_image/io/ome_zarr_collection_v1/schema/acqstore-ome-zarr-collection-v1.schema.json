@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mapmanager.github.io/acqstore/schemas/acqstore-ome-zarr-collection-v1.schema.json",
+  "title": "AcqStore OME-Zarr Collection v1",
+  "description": "Additive AcqStore collection, image metadata, analysis, and reference-image documents. This schema does not define or alter OME-NGFF image storage.",
+  "oneOf": [
+    { "$ref": "#/$defs/collection" },
+    { "$ref": "#/$defs/acqimage" },
+    { "$ref": "#/$defs/analysesDocument" },
+    { "$ref": "#/$defs/referenceImageDocument" }
+  ],
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A stable opaque identifier. Its value has no path, order, or display-name semantics."
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*\\\\)(?!.*[?#]).+$",
+      "description": "A slash-separated path relative to the collection root, without a scheme, query, fragment, backslash, or dot segment."
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "producer": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "csvResource": {
+      "type": "object",
+      "required": ["id", "media_type", "path"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "media_type": { "const": "text/csv" },
+        "path": { "$ref": "#/$defs/relativePath" }
+      },
+      "additionalProperties": false
+    },
+    "memberResources": {
+      "type": "object",
+      "required": ["acqimage"],
+      "properties": {
+        "acqimage": { "$ref": "#/$defs/relativePath" },
+        "analyses": { "$ref": "#/$defs/relativePath" }
+      },
+      "additionalProperties": false
+    },
+    "referenceImageLink": {
+      "type": "object",
+      "required": ["ome_zarr", "metadata"],
+      "properties": {
+        "ome_zarr": { "$ref": "#/$defs/relativePath" },
+        "metadata": { "$ref": "#/$defs/relativePath" }
+      },
+      "additionalProperties": false
+    },
+    "member": {
+      "type": "object",
+      "required": ["id", "name", "ome_zarr", "resources"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "name": { "type": "string", "minLength": 1 },
+        "ome_zarr": { "$ref": "#/$defs/relativePath" },
+        "resources": { "$ref": "#/$defs/memberResources" },
+        "reference_image": { "$ref": "#/$defs/referenceImageLink" },
+        "summary": { "$ref": "#/$defs/jsonObject" }
+      },
+      "additionalProperties": false
+    },
+    "collectionResources": {
+      "type": "object",
+      "properties": {
+        "tables": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/csvResource" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "collection": {
+      "title": "collection.json",
+      "type": "object",
+      "required": ["format", "version", "id", "name", "members"],
+      "properties": {
+        "format": { "const": "acqstore-ome-zarr-collection" },
+        "version": { "const": 1 },
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "name": { "type": "string", "minLength": 1 },
+        "created": { "type": "string", "format": "date-time" },
+        "producer": { "$ref": "#/$defs/producer" },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/member" }
+        },
+        "resources": { "$ref": "#/$defs/collectionResources" },
+        "metadata": { "$ref": "#/$defs/jsonObject" }
+      },
+      "additionalProperties": false
+    },
+    "pixelPoint": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 0 }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "roiBaseProperties": {
+      "id": { "$ref": "#/$defs/opaqueId" },
+      "name": { "type": "string", "minLength": 1 },
+      "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
+      "metadata": { "$ref": "#/$defs/jsonObject" }
+    },
+    "pointRoi": {
+      "type": "object",
+      "required": ["id", "type", "coordinate_space", "position"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "type": { "const": "point" },
+        "name": { "type": "string", "minLength": 1 },
+        "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
+        "position": { "$ref": "#/$defs/pixelPoint" },
+        "metadata": { "$ref": "#/$defs/jsonObject" }
+      },
+      "additionalProperties": false
+    },
+    "lineRoi": {
+      "type": "object",
+      "required": ["id", "type", "coordinate_space", "start", "stop"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "type": { "const": "line" },
+        "name": { "type": "string", "minLength": 1 },
+        "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
+        "start": { "$ref": "#/$defs/pixelPoint" },
+        "stop": { "$ref": "#/$defs/pixelPoint" },
+        "metadata": { "$ref": "#/$defs/jsonObject" }
+      },
+      "additionalProperties": false
+    },
+    "rectangleRoi": {
+      "type": "object",
+      "required": ["id", "type", "coordinate_space", "start", "stop"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "type": { "const": "rectangle" },
+        "name": { "type": "string", "minLength": 1 },
+        "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
+        "start": { "$ref": "#/$defs/pixelPoint" },
+        "stop": { "$ref": "#/$defs/pixelPoint" },
+        "metadata": { "$ref": "#/$defs/jsonObject" }
+      },
+      "additionalProperties": false
+    },
+    "roi": {
+      "oneOf": [
+        { "$ref": "#/$defs/pointRoi" },
+        { "$ref": "#/$defs/lineRoi" },
+        { "$ref": "#/$defs/rectangleRoi" }
+      ]
+    },
+    "axisDisplayEntry": {
+      "type": "object",
+      "required": ["type", "unit", "scale"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "unit": { "type": "string", "minLength": 1 },
+        "scale": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "axisDisplay": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "$ref": "#/$defs/axisDisplayEntry" }
+    },
+    "acqimage": {
+      "title": "acqimage.json",
+      "type": "object",
+      "required": ["format", "version", "image_id", "accepted", "rois"],
+      "properties": {
+        "format": { "const": "acqstore-acqimage" },
+        "version": { "const": 1 },
+        "image_id": { "$ref": "#/$defs/opaqueId" },
+        "accepted": { "type": "boolean" },
+        "rois": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roi" }
+        },
+        "experiment_metadata": { "$ref": "#/$defs/jsonObject" },
+        "image_metadata": { "$ref": "#/$defs/jsonObject" },
+        "axis_display": { "$ref": "#/$defs/axisDisplay" }
+      },
+      "additionalProperties": false
+    },
+    "analysis": {
+      "type": "object",
+      "required": ["id", "type", "resources"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "type": { "type": "string", "minLength": 1 },
+        "roi_id": { "$ref": "#/$defs/opaqueId" },
+        "channel": { "type": "integer", "minimum": 0 },
+        "parameters": { "$ref": "#/$defs/jsonObject" },
+        "summary": { "$ref": "#/$defs/jsonObject" },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/csvResource" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "analysesDocument": {
+      "title": "analyses.json",
+      "type": "object",
+      "required": ["format", "version", "image_id", "analyses"],
+      "properties": {
+        "format": { "const": "acqstore-analyses" },
+        "version": { "const": 1 },
+        "image_id": { "$ref": "#/$defs/opaqueId" },
+        "analyses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysis" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "scanPath": {
+      "type": "object",
+      "required": ["coordinate_space", "points"],
+      "properties": {
+        "coordinate_space": { "const": "reference-image-full-resolution-pixels" },
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/pixelPoint" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "referenceImageDocument": {
+      "title": "reference-image.json",
+      "type": "object",
+      "required": ["format", "version", "image_id"],
+      "properties": {
+        "format": { "const": "acqstore-reference-image" },
+        "version": { "const": 1 },
+        "image_id": { "$ref": "#/$defs/opaqueId" },
+        "scan_path": { "$ref": "#/$defs/scanPath" },
+        "metadata": { "$ref": "#/$defs/jsonObject" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
