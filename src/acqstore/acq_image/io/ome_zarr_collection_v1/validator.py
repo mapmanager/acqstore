@@ -57,7 +57,7 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def require_unique(values: list[str], label: str) -> None:
+def require_unique(values: list[str | int], label: str) -> None:
     """Require unique identifiers within one contract scope.
 
     Args:
@@ -70,14 +70,15 @@ def require_unique(values: list[str], label: str) -> None:
     Raises:
         ConformanceError: If any identifier is duplicated.
     """
-    seen: set[str] = set()
-    duplicates: set[str] = set()
+    seen: set[str | int] = set()
+    duplicates: set[str | int] = set()
     for value in values:
         if value in seen:
             duplicates.add(value)
         seen.add(value)
     if duplicates:
-        raise ConformanceError(f"Duplicate {label}: {', '.join(sorted(duplicates))}")
+        rendered = ', '.join(str(value) for value in sorted(duplicates, key=str))
+        raise ConformanceError(f"Duplicate {label}: {rendered}")
 
 
 def resolve_existing(root: Path, relative: str, label: str) -> Path:

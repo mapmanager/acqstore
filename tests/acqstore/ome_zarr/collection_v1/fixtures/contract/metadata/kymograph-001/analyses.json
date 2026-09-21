@@ -6,7 +6,7 @@
     {
       "id": "analysis-velocity-001",
       "type": "velocity",
-      "roi_id": "roi-rectangle-003",
+      "roi_id": 3,
       "channel": 0,
       "parameters": {
         "threshold": 0.5

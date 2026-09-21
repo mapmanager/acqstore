@@ -15,6 +15,11 @@
       "minLength": 1,
       "description": "A stable opaque identifier. Its value has no path, order, or display-name semantics."
     },
+    "roiId": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The native stable integer ROI identifier assigned by AcqStore RoiSet."
+    },
     "relativePath": {
       "type": "string",
       "minLength": 1,
@@ -116,7 +121,7 @@
       "maxItems": 2
     },
     "roiBaseProperties": {
-      "id": { "$ref": "#/$defs/opaqueId" },
+      "id": { "$ref": "#/$defs/roiId" },
       "name": { "type": "string", "minLength": 1 },
       "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
       "metadata": { "$ref": "#/$defs/jsonObject" }
@@ -125,7 +130,7 @@
       "type": "object",
       "required": ["id", "type", "coordinate_space", "position"],
       "properties": {
-        "id": { "$ref": "#/$defs/opaqueId" },
+        "id": { "$ref": "#/$defs/roiId" },
         "type": { "const": "point" },
         "name": { "type": "string", "minLength": 1 },
         "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
@@ -138,7 +143,7 @@
       "type": "object",
       "required": ["id", "type", "coordinate_space", "start", "stop"],
       "properties": {
-        "id": { "$ref": "#/$defs/opaqueId" },
+        "id": { "$ref": "#/$defs/roiId" },
         "type": { "const": "line" },
         "name": { "type": "string", "minLength": 1 },
         "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
@@ -152,7 +157,7 @@
       "type": "object",
       "required": ["id", "type", "coordinate_space", "start", "stop"],
       "properties": {
-        "id": { "$ref": "#/$defs/opaqueId" },
+        "id": { "$ref": "#/$defs/roiId" },
         "type": { "const": "rectangle" },
         "name": { "type": "string", "minLength": 1 },
         "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
@@ -210,7 +215,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/opaqueId" },
         "type": { "type": "string", "minLength": 1 },
-        "roi_id": { "$ref": "#/$defs/opaqueId" },
+        "roi_id": { "$ref": "#/$defs/roiId" },
         "channel": { "type": "integer", "minimum": 0 },
         "parameters": { "$ref": "#/$defs/jsonObject" },
         "summary": { "$ref": "#/$defs/jsonObject" },

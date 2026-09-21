@@ -74,7 +74,7 @@ def test_exports_roi_analysis_and_csv_resource(
     make_acq_image: Callable[..., AcqImage],
     make_acq_image_list: Callable[..., AcqImageList],
 ) -> None:
-    """Map source ROI/analysis identities to opaque v1 resource identities."""
+    """Preserve native ROI identity while allocating export resource identities."""
     image = make_acq_image()
     roi = image.rois.create_rect_roi(name='analysis ROI')
     analysis = RadonVelocityAnalysis(channel=0, roi_id=roi.roi_id)
@@ -92,7 +92,7 @@ def test_exports_roi_analysis_and_csv_resource(
     analyses = json.loads((destination / member['resources']['analyses']).read_text())
     roi_id = acqimage['rois'][0]['id']
     analysis_document = analyses['analyses'][0]
-    assert uuid.UUID(roi_id).version == 4
+    assert roi_id == roi.roi_id
     assert uuid.UUID(analysis_document['id']).version == 4
     assert analysis_document['roi_id'] == roi_id
     assert analysis_document['parameters'] == analysis.detection_params
@@ -101,7 +101,7 @@ def test_exports_roi_analysis_and_csv_resource(
     collection_tables = manifest.get('resources', {}).get('tables', [])
     assert {resource['id'] for resource in collection_tables} == {'velocity'}
     assert all((destination / resource['path']).is_file() for resource in collection_tables)
-    velocity = pd.read_csv(destination / collection_tables[0]['path'], dtype={'roi_id': 'string'})
+    velocity = pd.read_csv(destination / collection_tables[0]['path'])
     assert set(velocity['acq_image_id']) == {member['id']}
     assert set(velocity['roi_id']) == {roi_id}
 

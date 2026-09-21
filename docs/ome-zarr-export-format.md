@@ -54,7 +54,7 @@ The path base is the same for every AcqStore document, including nested `acqimag
 
 ## 3. Identity and consistency
 
-Collection, image/member, ROI, and analysis IDs are non-empty stable opaque strings. IDs carry no ordering, path, type, or display-name semantics. Implementations MUST NOT derive identity from array position, a human-readable name, or a directory name. UUIDs and ULIDs are suitable but not required.
+Collection, image/member, and analysis IDs are non-empty stable opaque strings. These IDs carry no ordering, path, type, or display-name semantics. Implementations MUST NOT derive them from array position, a human-readable name, or a directory name. UUIDs and ULIDs are suitable but not required. ROI IDs are AcqStore's native stable positive integers and MUST be exported unchanged.
 
 Within their respective scopes, member IDs, ROI IDs, analysis IDs, and resource IDs MUST be unique. A collection member's `id` MUST equal `image_id` in every linked `acqimage.json`, `analyses.json`, and `reference-image.json`. An analysis `roi_id`, when present, MUST identify a ROI in the linked `acqimage.json`. These cross-document requirements require collection-level validation in addition to JSON Schema validation.
 
@@ -93,8 +93,10 @@ Collection-level `resources.tables[]` are generic CSV links. Each has a stable `
 The AcqStore exporter writes a pool table only when that pool contains at least
 one completed analysis result. Its exported pool tables include
 `acq_image_id`, `roi_id`, and `channel` columns that explicitly link a row to
-the opaque Collection v1 identities. These columns are an AcqStore application
-convention, not a generic Collection v1 requirement.
+its collection member and native AcqStore selection. The exporter adds only
+`acq_image_id`; the native integer `roi_id` and `channel` values are preserved
+unchanged. These columns are an AcqStore application convention, not a generic
+Collection v1 requirement.
 
 ## 5. `acqimage.json`
 
@@ -115,7 +117,7 @@ The JSON shape is a public interchange contract. It is not required to equal any
 
 All v1 ROI coordinates are `[x, y]` in `primary-image-full-resolution-pixels`. Coordinates are zero-based non-negative integer pixel indices. They are independent of pyramid level and MUST be interpreted against the primary image's full-resolution OME-NGFF array.
 
-Every ROI requires stable opaque `id`, `type`, and `coordinate_space`. `name` and an untyped `metadata` object are optional.
+Every ROI requires its native positive integer `id`, plus `type` and `coordinate_space`. `name` and an untyped `metadata` object are optional.
 
 - A `point` ROI has one `position` pixel index.
 - A `line` ROI has `start` and `stop` endpoint pixel indices. Both endpoints identify pixels; this draft does not specify subpixel geometry.

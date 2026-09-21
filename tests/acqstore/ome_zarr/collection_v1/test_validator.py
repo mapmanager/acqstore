@@ -143,7 +143,7 @@ def test_rejects_analysis_unknown_roi(collection: Path) -> None:
     """Reject an analysis referencing an undeclared ROI."""
     _mutate(
         collection / 'metadata' / 'kymograph-001' / 'analyses.json',
-        lambda value: value['analyses'][0].update(roi_id='missing-roi'),
+        lambda value: value['analyses'][0].update(roi_id=999),
     )
     with pytest.raises(ConformanceError, match='unknown ROI'):
         validate_collection(collection, _schema_path())

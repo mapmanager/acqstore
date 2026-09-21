@@ -56,7 +56,7 @@ class AcqStoreOmeZarrImageExporter:
         self._root = Path(collection_root)
         self._image_id = image_id
         self._zarr_format = zarr_format
-        self._roi_ids: dict[int, str] = {}
+        self._roi_ids: set[int] = set()
 
     def export(self, acq_image: AcqImage) -> dict[str, Any]:
         """Write one primary image and its declared AcqStore resources.
@@ -133,8 +133,10 @@ class AcqStoreOmeZarrImageExporter:
         """
         output: list[dict[str, Any]] = []
         for roi in acq_image.rois:
-            roi_id = str(uuid.uuid4())
-            self._roi_ids[int(roi.roi_id)] = roi_id
+            roi_id = int(roi.roi_id)
+            if roi_id in self._roi_ids:
+                raise ValueError(f'Duplicate AcqStore ROI ID: {roi_id}')
+            self._roi_ids.add(roi_id)
             common: dict[str, Any] = {
                 'id': roi_id,
                 'name': str(roi.name) or f'ROI {roi.roi_id}',
@@ -259,7 +261,7 @@ class AcqStoreOmeZarrImageExporter:
                 self._build_analysis_document(
                     analysis,
                     analysis_id=analysis_id,
-                    roi_id=self._roi_ids[source_roi_id],
+                    roi_id=source_roi_id,
                     csv_path=csv_path,
                 )
             )
@@ -270,7 +272,7 @@ class AcqStoreOmeZarrImageExporter:
         analysis: BaseAnalysis,
         *,
         analysis_id: str,
-        roi_id: str,
+        roi_id: int,
         csv_path: str | None,
     ) -> dict[str, Any]:
         """Build one typed analysis envelope.
@@ -278,7 +280,7 @@ class AcqStoreOmeZarrImageExporter:
         Args:
             analysis: Source analysis instance.
             analysis_id: Newly allocated opaque analysis identifier.
-            roi_id: Owning opaque v1 ROI identifier.
+            roi_id: Native AcqStore ROI identifier.
             csv_path: Optional collection-root-relative result table path.
 
         Returns:
@@ -520,7 +522,7 @@ class AcqStoreOmeZarrCollectionExporter:
             None.
         """
         results: list[dict[str, Any]] = []
-        table_identity: dict[tuple[str, int], tuple[str, str]] = {}
+        table_identity: dict[tuple[str, int], str] = {}
         for acq_image in members:
             image_id = str(uuid.uuid4())
             image_exporter = AcqStoreOmeZarrImageExporter(
@@ -529,12 +531,12 @@ class AcqStoreOmeZarrCollectionExporter:
                 zarr_format=self._zarr_format,
             )
             results.append(image_exporter.export(acq_image))
-            for source_roi_id, exported_roi_id in image_exporter._roi_ids.items():
+            for source_roi_id in image_exporter._roi_ids:
                 for source_identity in {str(acq_image.path), str(acq_image.file_id)}:
                     key = (source_identity, source_roi_id)
                     if key in table_identity:
                         raise ValueError(f'Duplicate analysis-table identity: {key!r}')
-                    table_identity[key] = (image_id, exported_roi_id)
+                    table_identity[key] = image_id
         table_resources = self._export_collection_tables(
             acq_image_list,
             staged,
@@ -560,7 +562,7 @@ class AcqStoreOmeZarrCollectionExporter:
         self,
         acq_image_list: AcqImageList,
         staged: Path,
-        table_identity: dict[tuple[str, int], tuple[str, str]],
+        table_identity: dict[tuple[str, int], str],
     ) -> list[dict[str, str]]:
         """Write non-empty generic collection-level CSV resources.
 
@@ -610,27 +612,22 @@ class AcqStoreOmeZarrCollectionExporter:
     @staticmethod
     def _link_collection_table(
         dataframe: pd.DataFrame,
-        table_identity: dict[tuple[str, int], tuple[str, str]],
+        table_identity: dict[tuple[str, int], str],
     ) -> pd.DataFrame:
-        """Return an export copy linked to opaque Collection v1 identities."""
+        """Return an export copy linked to its Collection v1 member."""
         required = {'pool_row_id', 'path', 'roi_id'}
         missing = required - set(dataframe.columns)
         if missing:
             raise ValueError(f'Analysis table is missing required columns: {", ".join(sorted(missing))}')
         table = dataframe.copy()
-        links: list[tuple[str, str]] = []
+        image_ids: list[str] = []
         for path, source_roi_id in zip(table['path'], table['roi_id'], strict=True):
             key = (str(path), int(source_roi_id))
-            link = table_identity.get(key)
-            if link is None:
+            image_id = table_identity.get(key)
+            if image_id is None:
                 raise ValueError(f'Analysis table row does not reference an exported ROI: {key!r}')
-            links.append(link)
-        table.insert(1, 'acq_image_id', [image_id for image_id, _ in links])
-        table['roi_id'] = pd.Series(
-            [roi_id for _, roi_id in links],
-            index=table.index,
-            dtype='string',
-        )
+            image_ids.append(image_id)
+        table.insert(1, 'acq_image_id', image_ids)
         return table
 
     def _install(self, staged: Path) -> None:

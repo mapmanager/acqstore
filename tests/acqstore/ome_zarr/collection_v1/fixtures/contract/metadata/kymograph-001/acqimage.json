@@ -5,20 +5,20 @@
   "accepted": true,
   "rois": [
     {
-      "id": "roi-point-001",
+      "id": 1,
       "type": "point",
       "coordinate_space": "primary-image-full-resolution-pixels",
       "position": [10, 20]
     },
     {
-      "id": "roi-line-002",
+      "id": 2,
       "type": "line",
       "coordinate_space": "primary-image-full-resolution-pixels",
       "start": [5, 10],
       "stop": [50, 10]
     },
     {
-      "id": "roi-rectangle-003",
+      "id": 3,
       "type": "rectangle",
       "coordinate_space": "primary-image-full-resolution-pixels",
       "start": [12, 24],
