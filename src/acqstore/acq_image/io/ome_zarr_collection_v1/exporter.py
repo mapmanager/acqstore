@@ -184,12 +184,8 @@ class AcqStoreOmeZarrImageExporter:
             'image_id': self._image_id,
             'accepted': bool(acq_image.get_schema_row()['accept']),
             'rois': rois,
-            'experiment_metadata': self._json_value(
-                acq_image.get_metadata_section('experiment_metadata').get_values()
-            ),
-            'image_metadata': self._json_value(
-                acq_image.get_metadata_section('acq_image_header').get_values()
-            ),
+            'experiment_metadata': self._json_value(acq_image.get_metadata_section('experiment_metadata').get_values()),
+            'image_metadata': self._json_value(acq_image.get_metadata_section('acq_image_header').get_values()),
         }
         axis_display = self._build_axis_display(acq_image)
         if axis_display:
@@ -256,9 +252,7 @@ class AcqStoreOmeZarrImageExporter:
                 continue
             source_roi_id = int(analysis.key.roi_id)
             if source_roi_id not in self._roi_ids:
-                raise ValueError(
-                    f'Analysis {analysis.key.analysis_name!r} references unknown ROI {source_roi_id}'
-                )
+                raise ValueError(f'Analysis {analysis.key.analysis_name!r} references unknown ROI {source_roi_id}')
             analysis_id = str(uuid.uuid4())
             analysis_dir.mkdir(parents=True, exist_ok=True)
             csv_relative = Path('analysis') / self._image_id / f'{analysis_id}.csv'
@@ -328,9 +322,7 @@ class AcqStoreOmeZarrImageExporter:
             overwrite=False,
             zarr_format=self._zarr_format,
         )
-        values = self._json_value(
-            acq_image.get_metadata_section('reference_image_metadata').get_values()
-        )
+        values = self._json_value(acq_image.get_metadata_section('reference_image_metadata').get_values())
         x_values = values.pop('scan_path_x_pixels', [])
         y_values = values.pop('scan_path_y_pixels', [])
         has_scan_path = bool(values.pop('has_scan_path', False))
@@ -345,10 +337,7 @@ class AcqStoreOmeZarrImageExporter:
         if has_scan_path:
             if len(x_values) != len(y_values) or len(x_values) < 2:
                 raise ValueError('Reference scan path must contain matching X/Y arrays with at least two points')
-            points = [
-                [self._integer_coordinate(x), self._integer_coordinate(y)]
-                for x, y in zip(x_values, y_values, strict=True)
-            ]
+            points = [[self._integer_coordinate(x), self._integer_coordinate(y)] for x, y in zip(x_values, y_values, strict=True)]
             document['scan_path'] = {
                 'coordinate_space': 'reference-image-full-resolution-pixels',
                 'points': points,
@@ -530,15 +519,27 @@ class AcqStoreOmeZarrCollectionExporter:
         Returns:
             None.
         """
-        results = [
-            AcqStoreOmeZarrImageExporter(
+        results: list[dict[str, Any]] = []
+        table_identity: dict[tuple[str, int], tuple[str, str]] = {}
+        for acq_image in members:
+            image_id = str(uuid.uuid4())
+            image_exporter = AcqStoreOmeZarrImageExporter(
                 staged,
-                image_id=str(uuid.uuid4()),
+                image_id=image_id,
                 zarr_format=self._zarr_format,
-            ).export(acq_image)
-            for acq_image in members
-        ]
-        table_resources = self._export_collection_tables(acq_image_list, staged)
+            )
+            results.append(image_exporter.export(acq_image))
+            for source_roi_id, exported_roi_id in image_exporter._roi_ids.items():
+                for source_identity in {str(acq_image.path), str(acq_image.file_id)}:
+                    key = (source_identity, source_roi_id)
+                    if key in table_identity:
+                        raise ValueError(f'Duplicate analysis-table identity: {key!r}')
+                    table_identity[key] = (image_id, exported_roi_id)
+        table_resources = self._export_collection_tables(
+            acq_image_list,
+            staged,
+            table_identity,
+        )
         document: dict[str, Any] = {
             'format': 'acqstore-ome-zarr-collection',
             'version': 1,
@@ -559,6 +560,7 @@ class AcqStoreOmeZarrCollectionExporter:
         self,
         acq_image_list: AcqImageList,
         staged: Path,
+        table_identity: dict[tuple[str, int], tuple[str, str]],
     ) -> list[dict[str, str]]:
         """Write non-empty generic collection-level CSV resources.
 
@@ -570,13 +572,29 @@ class AcqStoreOmeZarrCollectionExporter:
             Generic CSV descriptors for ``collection.json``.
         """
         resources: list[dict[str, str]] = []
+        velocity_pool = acq_image_list.velocity_analysis_pool
+        velocity = velocity_pool.get_dataframe()
+        velocity_columns = tuple(column for column, _, _ in velocity_pool.get_analysis_column_specs())
+        sum_pool = acq_image_list.sum_intensity_analysis_pool
+        sum_intensity = sum_pool.get_dataframe()
         pools = (
-            ('velocity', acq_image_list.velocity_analysis_pool.get_dataframe()),
-            ('sum_intensity', acq_image_list.sum_intensity_analysis_pool.get_dataframe()),
+            (
+                'velocity',
+                velocity,
+                bool(velocity_columns) and bool(velocity[list(velocity_columns)].notna().any(axis=None)),
+            ),
+            (
+                'sum_intensity',
+                sum_intensity,
+                sum_pool.row_type_column in sum_intensity.columns
+                and bool(sum_intensity[sum_pool.row_type_column].notna().any())
+                and bool(sum_intensity[sum_pool.row_type_column].astype(str).ne('not_analyzed').any()),
+            ),
         )
-        for resource_id, dataframe in pools:
-            if dataframe.empty:
+        for resource_id, dataframe, has_results in pools:
+            if not has_results:
                 continue
+            dataframe = self._link_collection_table(dataframe, table_identity)
             relative = Path('tables') / f'{resource_id}.csv'
             (staged / relative).parent.mkdir(parents=True, exist_ok=True)
             dataframe.to_csv(staged / relative, index=False)
@@ -588,6 +606,32 @@ class AcqStoreOmeZarrCollectionExporter:
                 }
             )
         return resources
+
+    @staticmethod
+    def _link_collection_table(
+        dataframe: pd.DataFrame,
+        table_identity: dict[tuple[str, int], tuple[str, str]],
+    ) -> pd.DataFrame:
+        """Return an export copy linked to opaque Collection v1 identities."""
+        required = {'pool_row_id', 'path', 'roi_id'}
+        missing = required - set(dataframe.columns)
+        if missing:
+            raise ValueError(f'Analysis table is missing required columns: {", ".join(sorted(missing))}')
+        table = dataframe.copy()
+        links: list[tuple[str, str]] = []
+        for path, source_roi_id in zip(table['path'], table['roi_id'], strict=True):
+            key = (str(path), int(source_roi_id))
+            link = table_identity.get(key)
+            if link is None:
+                raise ValueError(f'Analysis table row does not reference an exported ROI: {key!r}')
+            links.append(link)
+        table.insert(1, 'acq_image_id', [image_id for image_id, _ in links])
+        table['roi_id'] = pd.Series(
+            [roi_id for _, roi_id in links],
+            index=table.index,
+            dtype='string',
+        )
+        return table
 
     def _install(self, staged: Path) -> None:
         """Atomically install a validated staging directory.
@@ -625,9 +669,7 @@ class AcqStoreOmeZarrCollectionExporter:
         """
         from acqstore.acq_image.io.ome_zarr import read_acq_pixels_ome_zarr
 
-        collection = json.loads(
-            (staged / 'acqstore' / 'collection.json').read_text(encoding='utf-8')
-        )
+        collection = json.loads((staged / 'acqstore' / 'collection.json').read_text(encoding='utf-8'))
         for member in collection['members']:
             read_acq_pixels_ome_zarr(staged / member['ome_zarr'], lazy=True)
             reference = member.get('reference_image')

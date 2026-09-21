@@ -43,7 +43,7 @@ def test_exports_real_independent_ome_zarr_image(
     member = manifest['members'][0]
     assert uuid.UUID(member['id']).version == 4
     assert member['id'] != image.file_id
-    assert member['ome_zarr'] == f"images/{member['id']}"
+    assert member['ome_zarr'] == f'images/{member["id"]}'
     loaded = read_acq_pixels_ome_zarr(destination / member['ome_zarr'], lazy=False)
     assert loaded.shape == image.pixels.shape
 
@@ -66,9 +66,7 @@ def test_writes_sparse_temporal_y_axis_display(
     manifest = json.loads((destination / 'acqstore' / 'collection.json').read_text())
     acqimage_path = destination / manifest['members'][0]['resources']['acqimage']
     document = json.loads(acqimage_path.read_text())
-    assert document['axis_display'] == {
-        'y': {'type': 'time', 'unit': 'second', 'scale': 0.002}
-    }
+    assert document['axis_display'] == {'y': {'type': 'time', 'unit': 'second', 'scale': 0.002}}
 
 
 def test_exports_roi_analysis_and_csv_resource(
@@ -101,11 +99,11 @@ def test_exports_roi_analysis_and_csv_resource(
     assert analysis_document['summary'] == {'velocity_mean': 2.5}
     assert (destination / analysis_document['resources'][0]['path']).is_file()
     collection_tables = manifest.get('resources', {}).get('tables', [])
-    assert {resource['id'] for resource in collection_tables} == {
-        'velocity',
-        'sum_intensity',
-    }
+    assert {resource['id'] for resource in collection_tables} == {'velocity'}
     assert all((destination / resource['path']).is_file() for resource in collection_tables)
+    velocity = pd.read_csv(destination / collection_tables[0]['path'], dtype={'roi_id': 'string'})
+    assert set(velocity['acq_image_id']) == {member['id']}
+    assert set(velocity['roi_id']) == {roi_id}
 
 
 def test_exports_reference_image_and_integer_scan_path(
@@ -192,9 +190,7 @@ def test_rejects_fractional_reference_scan_coordinates(
     )
 
     with pytest.raises(ValueError, match='non-negative integer'):
-        AcqStoreOmeZarrCollectionExporter(tmp_path / 'fractional.ome.zarr').export(
-            make_acq_image_list(image)
-        )
+        AcqStoreOmeZarrCollectionExporter(tmp_path / 'fractional.ome.zarr').export(make_acq_image_list(image))
     assert not (tmp_path / 'fractional.ome.zarr').exists()
 
 

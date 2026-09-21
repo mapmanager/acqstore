@@ -90,6 +90,12 @@ Each `members[]` object has:
 
 Collection-level `resources.tables[]` are generic CSV links. Each has a stable `id`, `media_type` equal to `text/csv`, and an explicit `path`. V1 assigns no domain semantics or column schema to tables such as velocity or sum-intensity pools. Consumers use application knowledge to interpret them.
 
+The AcqStore exporter writes a pool table only when that pool contains at least
+one completed analysis result. Its exported pool tables include
+`acq_image_id`, `roi_id`, and `channel` columns that explicitly link a row to
+the opaque Collection v1 identities. These columns are an AcqStore application
+convention, not a generic Collection v1 requirement.
+
 ## 5. `acqimage.json`
 
 | Field | Requirement | Meaning |
