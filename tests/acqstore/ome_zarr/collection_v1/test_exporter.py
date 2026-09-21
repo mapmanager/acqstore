@@ -194,12 +194,12 @@ def test_rejects_fractional_reference_scan_coordinates(
     assert not (tmp_path / 'fractional.ome.zarr').exists()
 
 
-def test_rejects_completed_analysis_without_required_csv_resource(
+def test_exports_summary_only_analysis_without_csv_resource(
     tmp_path: Path,
     make_acq_image: Callable[..., AcqImage],
     make_acq_image_list: Callable[..., AcqImageList],
 ) -> None:
-    """Prevent silent loss of a completed summary-only analysis."""
+    """Preserve a completed summary-only analysis without inventing a table."""
     image = make_acq_image()
     roi = image.rois.create_rect_roi()
     analysis = RadonVelocityAnalysis(channel=0, roi_id=roi.roi_id)
@@ -208,6 +208,11 @@ def test_rejects_completed_analysis_without_required_csv_resource(
     image.analysis_set._results_csv_loaded = True
     destination = tmp_path / 'summary-only.ome.zarr'
 
-    with pytest.raises(ValueError, match='summary but no CSV table resource'):
-        AcqStoreOmeZarrCollectionExporter(destination).export(make_acq_image_list(image))
-    assert not destination.exists()
+    AcqStoreOmeZarrCollectionExporter(destination).export(make_acq_image_list(image))
+
+    manifest = json.loads((destination / 'acqstore' / 'collection.json').read_text())
+    member = manifest['members'][0]
+    analyses = json.loads((destination / member['resources']['analyses']).read_text())['analyses']
+    assert len(analyses) == 1
+    assert analyses[0]['summary'] == {'velocity_mean': 2.5}
+    assert 'resources' not in analyses[0]

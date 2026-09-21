@@ -264,7 +264,9 @@ class AnalysisResult:
 
     ``summary`` stores small JSON-serializable values that belong in an
     acquisition sidecar. ``table`` stores larger per-row results that can be
-    saved to CSV and inspected in notebooks or GUI tables.
+    saved to CSV and inspected in notebooks or GUI tables. These outputs are
+    independent: a valid completed analysis may provide a summary, a table, or
+    both.
 
     Args:
         summary: Small JSON-serializable result dictionary.
@@ -275,6 +277,10 @@ class AnalysisResult:
 
     summary: dict[str, Any] = field(default_factory=dict)
     table: pd.DataFrame | None = None
+
+    def has_results(self) -> bool:
+        """Return whether the analysis produced a summary or table."""
+        return bool(self.summary) or self.table is not None
 
 
 class BaseAnalysis(ABC):
@@ -599,6 +605,10 @@ class BaseAnalysis(ABC):
             True if result table exists.
         """
         return self.result.table is not None
+
+    def has_results(self) -> bool:
+        """Return whether this analysis produced any public result output."""
+        return self.result.has_results()
 
     def get_table_columns(self) -> list[str]:
         """Return result table column names.

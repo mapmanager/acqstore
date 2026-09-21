@@ -234,7 +234,7 @@ class AcqStoreOmeZarrImageExporter:
             acq_image: Source acquisition image.
 
         Returns:
-            Analysis documents for instances with result tables.
+            Analysis documents for instances with summaries and/or tables.
 
         Raises:
             ValueError: If an analysis references an unknown ROI.
@@ -242,27 +242,25 @@ class AcqStoreOmeZarrImageExporter:
         output: list[dict[str, Any]] = []
         analysis_dir = self._root / 'analysis' / self._image_id
         for analysis in acq_image.analysis_set.as_list():
-            table = analysis.table_with_bookkeeping()
-            if table is None:
-                if analysis.result.summary:
-                    raise ValueError(
-                        f'Completed analysis {analysis.key.analysis_name!r} has a summary but no '
-                        'CSV table resource required by Collection v1'
-                    )
+            if not analysis.has_results():
                 continue
             source_roi_id = int(analysis.key.roi_id)
             if source_roi_id not in self._roi_ids:
                 raise ValueError(f'Analysis {analysis.key.analysis_name!r} references unknown ROI {source_roi_id}')
             analysis_id = str(uuid.uuid4())
-            analysis_dir.mkdir(parents=True, exist_ok=True)
-            csv_relative = Path('analysis') / self._image_id / f'{analysis_id}.csv'
-            table.to_csv(self._root / csv_relative, index=False)
+            table = analysis.table_with_bookkeeping()
+            csv_path: str | None = None
+            if table is not None:
+                analysis_dir.mkdir(parents=True, exist_ok=True)
+                csv_relative = Path('analysis') / self._image_id / f'{analysis_id}.csv'
+                table.to_csv(self._root / csv_relative, index=False)
+                csv_path = csv_relative.as_posix()
             output.append(
                 self._build_analysis_document(
                     analysis,
                     analysis_id=analysis_id,
                     roi_id=self._roi_ids[source_roi_id],
-                    csv_path=csv_relative.as_posix(),
+                    csv_path=csv_path,
                 )
             )
         return output
@@ -273,7 +271,7 @@ class AcqStoreOmeZarrImageExporter:
         *,
         analysis_id: str,
         roi_id: str,
-        csv_path: str,
+        csv_path: str | None,
     ) -> dict[str, Any]:
         """Build one typed analysis envelope.
 
@@ -281,26 +279,28 @@ class AcqStoreOmeZarrImageExporter:
             analysis: Source analysis instance.
             analysis_id: Newly allocated opaque analysis identifier.
             roi_id: Owning opaque v1 ROI identifier.
-            csv_path: Collection-root-relative result table path.
+            csv_path: Optional collection-root-relative result table path.
 
         Returns:
             Complete schema-ready analysis object.
         """
-        return {
+        document: dict[str, Any] = {
             'id': analysis_id,
             'type': str(analysis.key.analysis_name),
             'roi_id': roi_id,
             'channel': int(analysis.key.channel),
             'parameters': self._json_value(dict(analysis.detection_params)),
             'summary': self._json_value(dict(analysis.result.summary)),
-            'resources': [
+        }
+        if csv_path is not None:
+            document['resources'] = [
                 {
                     'id': 'table',
                     'media_type': 'text/csv',
                     'path': csv_path,
                 }
-            ],
-        }
+            ]
+        return document
 
     def _export_reference(self, acq_image: AcqImage) -> dict[str, str] | None:
         """Write an optional reference image and metadata document.

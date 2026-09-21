@@ -191,7 +191,7 @@ def validate_collection(root: Path, schema_path: Path) -> None:
                     raise ConformanceError(
                         f"Analysis {analysis['id']} refers to unknown ROI {roi_id}"
                     )
-                resources = analysis["resources"]
+                resources = analysis.get("resources", [])
                 require_unique(
                     [resource["id"] for resource in resources],
                     f"resource IDs for analysis {analysis['id']}",

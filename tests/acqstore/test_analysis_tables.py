@@ -9,6 +9,16 @@ from acqstore.acq_image.acq_analysis_set import AcqAnalysisSet
 from acqstore.acq_image.analysis.velocity_analysis.radon_velocity_analysis import RadonVelocityAnalysis
 
 
+def test_analysis_results_may_be_summary_only() -> None:
+    """A summary is a complete public result without requiring a table."""
+    analysis = RadonVelocityAnalysis(channel=0, roi_id=1)
+
+    assert analysis.has_results() is False
+    analysis.result.summary = {'status': 'ok'}
+    assert analysis.has_results() is True
+    assert analysis.has_table() is False
+
+
 def test_table_with_bookkeeping_adds_channel_and_roi() -> None:
     """table_with_bookkeeping should add channel and ROI columns."""
     analysis = RadonVelocityAnalysis(channel=3, roi_id=4)

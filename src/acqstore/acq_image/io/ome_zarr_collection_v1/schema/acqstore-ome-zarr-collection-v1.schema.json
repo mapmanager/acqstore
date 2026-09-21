@@ -206,7 +206,7 @@
     },
     "analysis": {
       "type": "object",
-      "required": ["id", "type", "resources"],
+      "required": ["id", "type"],
       "properties": {
         "id": { "$ref": "#/$defs/opaqueId" },
         "type": { "type": "string", "minLength": 1 },

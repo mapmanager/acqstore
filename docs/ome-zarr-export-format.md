@@ -163,7 +163,7 @@ The member's `reference_image` object requires:
 | `image_id` | required | ID of the owning collection member. |
 | `analyses` | required | Analysis-instance list; MAY be empty. |
 
-Each analysis requires a stable opaque `id`, a non-empty application-defined `type`, and one or more CSV `resources`. It MAY include `roi_id`, a zero-based integer `channel`, and untyped JSON objects named `parameters` and `summary`.
+Each analysis requires a stable opaque `id` and a non-empty application-defined `type`. It MAY include `roi_id`, a zero-based integer `channel`, untyped JSON objects named `parameters` and `summary`, and one or more CSV `resources`. Summary-only analyses omit `resources`; this directly reflects AcqStore's public analysis model, in which summary and table outputs are independent.
 
 Each analysis resource requires a stable `id`, `media_type` equal to `text/csv`, and an explicit relative `path`. JSON holds the typed analysis envelope and links; CSV holds tabular results. V1 does not standardize analysis type names, CSV columns, parameters, or summary contents.
 
