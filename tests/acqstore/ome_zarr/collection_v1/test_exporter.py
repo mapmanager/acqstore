@@ -97,13 +97,67 @@ def test_exports_roi_analysis_and_csv_resource(
     assert analysis_document['roi_id'] == roi_id
     assert analysis_document['parameters'] == analysis.detection_params
     assert analysis_document['summary'] == {'velocity_mean': 2.5}
-    assert (destination / analysis_document['resources'][0]['path']).is_file()
+    analysis_table = pd.read_csv(destination / analysis_document['resources'][0]['path'])
+    assert analysis_table[['channel', 'roi_id']].to_dict('records') == [
+        {'channel': 0, 'roi_id': roi_id},
+        {'channel': 0, 'roi_id': roi_id},
+    ]
     collection_tables = manifest.get('resources', {}).get('tables', [])
     assert {resource['id'] for resource in collection_tables} == {'velocity'}
     assert all((destination / resource['path']).is_file() for resource in collection_tables)
     velocity = pd.read_csv(destination / collection_tables[0]['path'])
     assert set(velocity['acq_image_id']) == {member['id']}
     assert set(velocity['roi_id']) == {roi_id}
+
+
+def test_exports_empty_roi_name_without_inventing_fallback(
+    tmp_path: Path,
+    make_acq_image: Callable[..., AcqImage],
+    make_acq_image_list: Callable[..., AcqImageList],
+) -> None:
+    """Preserve an empty native ROI name exactly."""
+    image = make_acq_image()
+    roi = image.rois.create_rect_roi(name='')
+    destination = tmp_path / 'empty-roi-name.ome.zarr'
+
+    AcqStoreOmeZarrCollectionExporter(destination).export(make_acq_image_list(image))
+
+    manifest = json.loads((destination / 'acqstore' / 'collection.json').read_text())
+    member = manifest['members'][0]
+    acqimage = json.loads((destination / member['resources']['acqimage']).read_text())
+    assert acqimage['rois'][0]['id'] == roi.roi_id
+    assert acqimage['rois'][0]['name'] == ''
+
+
+def test_analysis_instances_share_native_combined_type_table(
+    tmp_path: Path,
+    make_acq_image: Callable[..., AcqImage],
+    make_acq_image_list: Callable[..., AcqImageList],
+) -> None:
+    """Export the same combined analysis-type table used by normal persistence."""
+    image = make_acq_image()
+    first_roi = image.rois.create_rect_roi(name='')
+    second_roi = image.rois.create_rect_roi(name='')
+    for channel, roi_id, value in ((0, first_roi.roi_id, 2.0), (1, second_roi.roi_id, 4.0)):
+        analysis = RadonVelocityAnalysis(channel=channel, roi_id=roi_id)
+        analysis.result.summary = {'velocity_mean': value}
+        analysis.result.table = pd.DataFrame({'time': [0.0], 'velocity': [value]})
+        image.analysis_set.add(analysis)
+    image.analysis_set._results_csv_loaded = True
+    destination = tmp_path / 'combined-analysis.ome.zarr'
+
+    AcqStoreOmeZarrCollectionExporter(destination).export(make_acq_image_list(image))
+
+    manifest = json.loads((destination / 'acqstore' / 'collection.json').read_text())
+    member = manifest['members'][0]
+    analyses = json.loads((destination / member['resources']['analyses']).read_text())['analyses']
+    paths = {analysis['resources'][0]['path'] for analysis in analyses}
+    assert len(paths) == 1
+    table = pd.read_csv(destination / paths.pop())
+    assert table[['channel', 'roi_id', 'velocity']].to_dict('records') == [
+        {'channel': 0, 'roi_id': first_roi.roi_id, 'velocity': 2.0},
+        {'channel': 1, 'roi_id': second_roi.roi_id, 'velocity': 4.0},
+    ]
 
 
 def test_exports_reference_image_and_integer_scan_path(

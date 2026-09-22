@@ -117,7 +117,7 @@ The JSON shape is a public interchange contract. It is not required to equal any
 
 All v1 ROI coordinates are `[x, y]` in `primary-image-full-resolution-pixels`. Coordinates are zero-based non-negative integer pixel indices. They are independent of pyramid level and MUST be interpreted against the primary image's full-resolution OME-NGFF array.
 
-Every ROI requires its native positive integer `id`, plus `type` and `coordinate_space`. `name` and an untyped `metadata` object are optional.
+Every ROI requires its native positive integer `id`, plus `type` and `coordinate_space`. `name` and an untyped `metadata` object are optional. When present, `name` is exported exactly and MAY be an empty string; exporters MUST NOT synthesize a fallback name.
 
 - A `point` ROI has one `position` pixel index.
 - A `line` ROI has `start` and `stop` endpoint pixel indices. Both endpoints identify pixels; this draft does not specify subpixel geometry.
@@ -168,6 +168,8 @@ The member's `reference_image` object requires:
 Each analysis requires a stable opaque `id` and a non-empty application-defined `type`. It MAY include `roi_id`, a zero-based integer `channel`, untyped JSON objects named `parameters` and `summary`, and one or more CSV `resources`. Summary-only analyses omit `resources`; this directly reflects AcqStore's public analysis model, in which summary and table outputs are independent.
 
 Each analysis resource requires a stable `id`, `media_type` equal to `text/csv`, and an explicit relative `path`. JSON holds the typed analysis envelope and links; CSV holds tabular results. V1 does not standardize analysis type names, CSV columns, parameters, or summary contents.
+
+The AcqStore exporter follows normal AcqImage persistence: for each collection member it writes one combined CSV per analysis type, including native `channel` and `roi_id` bookkeeping columns. Analysis instances of the same type link to that shared CSV, and consumers select the instance rows using those two columns. Analysis summaries are exported unchanged. For sum-intensity analysis, `summary.peak_events` is the authoritative sparse peak result; the dense CSV remains the source for continuous traces. Pool/reporting adapters such as `get_pool_peak_rows()` are not per-image persistence resources and are not used to create additional Collection v1 analysis CSVs.
 
 ## 10. Conformance
 

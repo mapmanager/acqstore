@@ -139,7 +139,7 @@ class AcqStoreOmeZarrImageExporter:
             self._roi_ids.add(roi_id)
             common: dict[str, Any] = {
                 'id': roi_id,
-                'name': str(roi.name) or f'ROI {roi.roi_id}',
+                'name': str(roi.name),
                 'coordinate_space': 'primary-image-full-resolution-pixels',
             }
             if roi.note:
@@ -243,6 +243,13 @@ class AcqStoreOmeZarrImageExporter:
         """
         output: list[dict[str, Any]] = []
         analysis_dir = self._root / 'analysis' / self._image_id
+        tables_by_name = acq_image.analysis_set.results_tables_by_name()
+        table_paths: dict[str, str] = {}
+        for analysis_name, table in tables_by_name.items():
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+            csv_relative = Path('analysis') / self._image_id / f'{analysis_name}.csv'
+            table.to_csv(self._root / csv_relative, index=False)
+            table_paths[analysis_name] = csv_relative.as_posix()
         for analysis in acq_image.analysis_set.as_list():
             if not analysis.has_results():
                 continue
@@ -250,13 +257,7 @@ class AcqStoreOmeZarrImageExporter:
             if source_roi_id not in self._roi_ids:
                 raise ValueError(f'Analysis {analysis.key.analysis_name!r} references unknown ROI {source_roi_id}')
             analysis_id = str(uuid.uuid4())
-            table = analysis.table_with_bookkeeping()
-            csv_path: str | None = None
-            if table is not None:
-                analysis_dir.mkdir(parents=True, exist_ok=True)
-                csv_relative = Path('analysis') / self._image_id / f'{analysis_id}.csv'
-                table.to_csv(self._root / csv_relative, index=False)
-                csv_path = csv_relative.as_posix()
+            csv_path = table_paths.get(analysis.key.analysis_name) if analysis.result.table is not None else None
             output.append(
                 self._build_analysis_document(
                     analysis,

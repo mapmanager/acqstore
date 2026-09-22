@@ -122,7 +122,7 @@
     },
     "roiBaseProperties": {
       "id": { "$ref": "#/$defs/roiId" },
-      "name": { "type": "string", "minLength": 1 },
+      "name": { "type": "string" },
       "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
       "metadata": { "$ref": "#/$defs/jsonObject" }
     },
@@ -132,7 +132,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/roiId" },
         "type": { "const": "point" },
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
         "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
         "position": { "$ref": "#/$defs/pixelPoint" },
         "metadata": { "$ref": "#/$defs/jsonObject" }
@@ -145,7 +145,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/roiId" },
         "type": { "const": "line" },
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
         "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
         "start": { "$ref": "#/$defs/pixelPoint" },
         "stop": { "$ref": "#/$defs/pixelPoint" },
@@ -159,7 +159,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/roiId" },
         "type": { "const": "rectangle" },
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
         "coordinate_space": { "const": "primary-image-full-resolution-pixels" },
         "start": { "$ref": "#/$defs/pixelPoint" },
         "stop": { "$ref": "#/$defs/pixelPoint" },

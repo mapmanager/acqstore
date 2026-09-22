@@ -438,6 +438,11 @@ class SumIntensityAnalysis(BaseAnalysis):
     def get_pool_peak_columns(cls) -> tuple[str, ...]:
         """Return scalar peak-row columns for sum-intensity pool tables.
 
+        This is a flattened collection-pool/reporting view. Normal AcqImage
+        persistence does not use it: the authoritative peak analysis remains
+        in ``result.summary['peak_events']``, while the dense trace remains in
+        ``result.table``.
+
         Returns:
             Tuple of flattened peak-event column names. Feature columns are
             generated from :meth:`get_feature_schema` so future event-level
@@ -485,6 +490,10 @@ class SumIntensityAnalysis(BaseAnalysis):
 
     def get_pool_peak_rows(self) -> tuple[dict[str, object], ...]:
         """Return flattened scalar rows for detected sum-intensity peaks.
+
+        This is a collection-pool/reporting adapter, not the native saved form
+        of a sum-intensity analysis. Normal AcqImage persistence writes the
+        dense result table and preserves peak events in the result summary.
 
         Returns:
             Tuple of dictionaries, one per detected peak. Empty when the
