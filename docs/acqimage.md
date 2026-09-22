@@ -20,7 +20,7 @@ AcqImage
 ├── image header metadata       # editable Y/X physical units
 ├── experimental metadata       # user fields (species, notes, ...)
 ├── rois (RoiSet)               # rect / line ROIs
-├── analysis_set                # analyses keyed by (name, channel, roi_id)
+├── analysis_set                # analyses keyed by (analysis_name, channel, roi_id)
 └── sidecar files               # <file>.json + analysis CSVs
 ```
 
@@ -112,6 +112,8 @@ acq.save()
 - Pixel access goes through the loader / `AcqPixels` after images are loaded.
 - ROIs define the region used by analysis. See [ROIs](rois.md).
 - Analysis results are keyed by `(analysis_name, channel, roi_id)`.
+- `roi_id`, not the ROI's free-form `name`, identifies the ROI throughout
+  runtime and persistence.
 
 ## Sidecar files
 

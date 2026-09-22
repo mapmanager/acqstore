@@ -117,7 +117,7 @@ The JSON shape is a public interchange contract. It is not required to equal any
 
 All v1 ROI coordinates are `[x, y]` in `primary-image-full-resolution-pixels`. Coordinates are zero-based non-negative integer pixel indices. They are independent of pyramid level and MUST be interpreted against the primary image's full-resolution OME-NGFF array.
 
-Every ROI requires its native positive integer `id`, plus `type` and `coordinate_space`. `name` and an untyped `metadata` object are optional. When present, `name` is exported exactly and MAY be an empty string; exporters MUST NOT synthesize a fallback name.
+Every ROI requires its native positive integer `id`, plus `type` and `coordinate_space`. The native ROI ID is the sole authoritative ROI identity and linkage value. `name` and an untyped `metadata` object are optional. When present, `name` is free-form display text, is exported exactly, and MAY be empty or duplicated. Exporters MUST NOT synthesize a fallback name or use a name to derive an ID, key, path, relationship, selection, or analysis association.
 
 - A `point` ROI has one `position` pixel index.
 - A `line` ROI has `start` and `stop` endpoint pixel indices. Both endpoints identify pixels; this draft does not specify subpixel geometry.

@@ -2,7 +2,8 @@
 
 Analysis modules take detection parameters as input and produce summary values
 (and optional tabular CSV outputs) on an `AcqImage` for a given
-**(channel, ROI)**.
+**(channel, roi_id)**. The integer `roi_id` identifies the ROI; its free-form
+`name` is display text and has no analysis identity or linkage semantics.
 
 All current quantitative workflows operate on **line scan kymographs**: repeated
 sampling along a spatial line over time (typically Y = time, X = distance along
@@ -32,7 +33,7 @@ acq = AcqImage(str(ensure_sample_file('kymograph-flow')))
 channel = acq.get_default_channel()
 roi_id = acq.get_default_roi()
 if roi_id is None:
-    roi_id = acq.rois.create_rect_roi(name='analysis').roi_id
+    roi_id = acq.rois.create_rect_roi().roi_id
 
 analysis = acq.analysis_set.create_and_run(
     RadonVelocityAnalysis,

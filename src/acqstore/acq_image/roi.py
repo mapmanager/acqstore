@@ -12,6 +12,11 @@ The schema supports:
 - runtime -> dict/JSON -> runtime round trips
 - clamping to known image bounds
 
+``roi_id`` is the sole authoritative identity of an ROI within an
+``AcqImage``. Runtime lookup, analysis association, persistence, loading, and
+export use ``roi_id``. The ``name`` field is free-form display text: it may be
+empty or duplicated and MUST NOT be used as an identifier, key, or link.
+
 Typical scripted usage::
 
     from acqstore.acq_image.roi import RectRoiBounds
@@ -186,7 +191,8 @@ class BaseROI:
 
     Args:
         roi_id: Stable integer ROI identifier assigned by ``RoiSet``.
-        name: Human-readable display name.
+        name: Free-form display text. It may be empty or duplicated and has no
+            identity or linkage semantics.
         note: Optional human-readable note.
     """
 
@@ -215,7 +221,8 @@ class RectROI(BaseROI):
 
     Args:
         roi_id: Stable integer ROI identifier assigned by ``RoiSet``.
-        name: Human-readable display name.
+        name: Free-form display text. It may be empty or duplicated and has no
+            identity or linkage semantics.
         note: Optional human-readable note.
         bounds: Rectangular ROI bounds.
     """
@@ -352,7 +359,8 @@ class LineROI(BaseROI):
 
     Args:
         roi_id: Stable integer ROI identifier assigned by ``RoiSet``.
-        name: Human-readable display name.
+        name: Free-form display text. It may be empty or duplicated and has no
+            identity or linkage semantics.
         note: Optional human-readable note.
         endpoints: Line endpoints.
     """
@@ -461,6 +469,9 @@ class RoiSet:
     """Container and manager for multiple ROI instances.
 
     Owns ROIs, assigns unique integer IDs, and preserves creation order.
+    ``roi_id`` is the sole key for lookup, editing, deletion, analysis
+    association, persistence, and export. ROI names are free-form display text
+    and are never keys; empty and duplicate names are valid.
     Current AcqStore analyses use rectangular ROIs
     (:meth:`create_rect_roi` / :meth:`edit_rect_roi`). Line-segment ROIs are
     supported via :meth:`create_line_roi` but are not used by current kymograph
@@ -502,7 +513,7 @@ class RoiSet:
 
         Args:
             bounds: Desired rectangular bounds. If None, defaults to full image.
-            name: Display name.
+            name: Free-form display text. Empty and duplicate names are valid.
             note: Optional notes.
 
         Returns:
@@ -531,7 +542,7 @@ class RoiSet:
 
         Args:
             endpoints: Desired line endpoints.
-            name: Display name.
+            name: Free-form display text. Empty and duplicate names are valid.
             note: Optional notes.
 
         Returns:
@@ -560,7 +571,7 @@ class RoiSet:
         Args:
             roi_id: Identifier of the ROI to edit.
             bounds: New rectangular bounds. If None, bounds are unchanged.
-            name: New name. If None, name is unchanged.
+            name: New free-form display text. If None, name is unchanged.
             note: New note. If None, note is unchanged.
 
         Returns:
@@ -602,7 +613,7 @@ class RoiSet:
         Args:
             roi_id: Identifier of the ROI to edit.
             endpoints: New line endpoints. If None, endpoints are unchanged.
-            name: New name. If None, name is unchanged.
+            name: New free-form display text. If None, name is unchanged.
             note: New note. If None, note is unchanged.
 
         Returns:
@@ -789,7 +800,7 @@ class RoiSet:
 
         Args:
             roi: ROI to update.
-            name: New name, or None to leave unchanged.
+            name: New free-form display text, or None to leave unchanged.
             note: New note, or None to leave unchanged.
 
         Returns:

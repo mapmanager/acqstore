@@ -18,6 +18,18 @@ dim0, dim1). Rectangular stop coordinates are exclusive (numpy-style slicing).
 
 See `acqstore.acq_image.roi` and the [AcqImage API](api/acq-image.md).
 
+## ROI identity
+
+`roi_id` is the sole authoritative identity of an ROI within an `AcqImage`.
+Runtime lookup, editing, deletion, analysis association, saving, loading, and
+export all use `roi_id`.
+
+`name` is free-form display and annotation text. It may be an empty string and
+multiple ROIs may have the same name. Changing a name does not change ROI
+identity. Code that saves, loads, or exports an ROI must preserve its name as
+data, but must not use the name to derive an identifier, key, path, relationship,
+or selection.
+
 ## Create a rectangular ROI
 
 With no bounds, the ROI covers the full image:
@@ -28,7 +40,10 @@ from acqstore.sample_data import ensure_sample_file
 
 acq = AcqImage(str(ensure_sample_file('kymograph-diameter')))
 
-roi = acq.rois.create_rect_roi(name='full', note='full-frame ROI')
+roi = acq.rois.create_rect_roi(
+    name='full',  # display text only
+    note='full-frame ROI',
+)
 print(roi.roi_id, roi.bounds)
 ```
 
