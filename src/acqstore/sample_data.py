@@ -29,6 +29,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import threading
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -43,7 +44,8 @@ CATALOG_URL = 'https://raw.githubusercontent.com/mapmanager/cloudscope-data/main
 
 _CATALOG_CACHE_DIR = '_catalog'
 _CATALOG_CACHE_FILENAME = 'catalog.json'
-_CATALOG: tuple['SampleDataset', ...] | None = None
+_CATALOG: tuple[SampleDataset, ...] | None = None
+_CATALOG_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +103,9 @@ def list_samples() -> tuple[SampleDataset, ...]:
     """Return catalog sample datasets in catalog display order."""
     global _CATALOG
     if _CATALOG is None:
-        _CATALOG = _load_catalog()
+        with _CATALOG_LOCK:
+            if _CATALOG is None:
+                _CATALOG = _load_catalog()
     return _CATALOG
 
 

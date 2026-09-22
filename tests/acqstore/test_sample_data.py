@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
+import threading
 import zipfile
 
 import pytest
@@ -109,6 +111,45 @@ def test_list_samples_reuses_in_memory_catalog(monkeypatch) -> None:
 
     assert list_samples() == list_samples()
     assert calls == 1
+
+
+def test_list_samples_initialization_is_thread_safe(tmp_path, monkeypatch) -> None:
+    worker_count = 8
+    calls = 0
+    calls_lock = threading.Lock()
+    workers_ready = threading.Barrier(worker_count)
+    first_fetch_started = threading.Event()
+    concurrent_fetch_started = threading.Event()
+    release_fetch = threading.Event()
+
+    def _fetch() -> str:
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+            if calls > 1:
+                concurrent_fetch_started.set()
+        first_fetch_started.set()
+        if not release_fetch.wait(timeout=5):
+            raise AssertionError('catalog fetch was not released')
+        return _catalog_text()
+
+    def _list_samples() -> tuple[SampleDataset, ...]:
+        workers_ready.wait(timeout=5)
+        return list_samples()
+
+    monkeypatch.setattr(sample_data_module, '_fetch_catalog', _fetch)
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(_list_samples) for _ in range(worker_count)]
+        assert first_fetch_started.wait(timeout=5)
+        concurrent_fetch_started.wait(timeout=0.25)
+        release_fetch.set()
+        results = [future.result(timeout=5) for future in futures]
+
+    assert results == [(_sample(),)] * worker_count
+    assert calls == 1
+    cache_path = tmp_path / 'sample-cache' / '_catalog' / 'catalog.json'
+    assert json.loads(cache_path.read_text(encoding='utf-8'))[0]['id'] == 'unit-sample'
 
 
 def test_list_samples_uses_cached_catalog_when_fetch_fails(tmp_path, monkeypatch) -> None:
